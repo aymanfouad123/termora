@@ -66,10 +66,6 @@ It's not just a shell tool — it's your agentic terminal copilot.
 - All logs stored locally in `~/.termora/`
 - Optional: Use local AI models via Ollama for complete privacy
 
-## 🤝 Contributing
-
-Contributions are welcome! See [CONTRIBUTING.md](CONTRIBUTING.md) for more information.
-
 ## 📝 License
 
 This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
