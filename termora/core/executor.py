@@ -131,14 +131,14 @@ class CommandExecutor:
             
             for path_str in paths:
                 try:
-                    # Resolve the path 
+                    # Resolve the path - Expanding things like ~ to full paths
                     path = resolve_path(path_str)
                     
                     if not path.exists():
                         self.console.print(f"[yellow]Warning: Path does not exist, skipping: {path}[/yellow]")
                         continue
                     
-                    # Create relative directory structure in temp directory
+                    # Create same directory structure in temp directory
                     if path.is_absolute():
                         # For absolute paths, use the path structure starting from root
                         relative_path = str(path).lstrip('/')
@@ -160,9 +160,162 @@ class CommandExecutor:
                     
                 except Exception as e:
                     self.console.print(f"[red]Error backing up {path}: {str(e)}[/red]")
+            
             with tarfile.open(backup_path, "w:gz") as tar:
                 tar.add(temp_dir, arcname="")
         
         self.console.print(f"[green]Backup completed: {backup_path}[/green]")
         return str(backup_path)
-                        
+    
+    def execute_plan(self, plan) -> Dict[str, Any]:
+        """
+        Execute a command plan.
+        
+        Args:
+            plan: A CommandPlan instance
+            
+        Returns:
+            Execution result with commands, outputs, and backup info
+        """
+        
+        # Display the plan
+        self.display_plan(plan)
+        
+        # Get confirmation
+        if not self.confirm_execution(plan):
+            self.console.print("[yellow]Execution cancelled by user.[/yellow]")
+            return {
+                "executed": False,
+                "reason": "User cancelled",
+                "commands": plan.commands,
+                "outputs": [],
+                "backup_path": None
+            }
+        
+        # Create backup if needed
+        backup_path = None
+        if plan.requires_backup:
+            # Determine what to back up
+            backup_paths = plan.backup_paths
+            if not backup_paths:
+                # If no specific paths provided, infer from commands
+                backup_paths = self._infer_backup_paths(plan.commands)
+                
+            if backup_paths:
+                backup_path = self.create_backup(backup_paths)
+        
+        # Debug mode - don't actually execute
+        if self.debug:
+            self.console.print("[yellow]Debug mode: Commands not executed[/yellow]")
+            return {
+                "executed": False,
+                "reason": "Debug mode",
+                "commands": plan.commands,
+                "outputs": ["Debug mode: Command not executed"] * len(plan.commands),
+                "backup_path": backup_path
+            }
+        
+         # Execute commands
+        self.console.print("\n[bold blue] Executing commands...[/bold blue]")
+        outputs = []
+        
+        for i, cmd in enumerate(plan.commands, 1):
+            self.console.print(f"\n[bold]Running command {i}/{len(plan.commands)}:[/bold]")
+            self.console.print(Syntax(cmd, "bash", theme="monokai"))
+            
+            try:
+                # Execute the command
+                process = subprocess.run(
+                    cmd,
+                    shell=True,
+                    capture_output=True,
+                    text=True
+                )
+                
+                # Capture output
+                if process.stdout:
+                    self.console.print("[green]Output:[/green]")
+                    self.console.print(process.stdout)
+                
+                # Capture errors
+                if process.returncode != 0:
+                    self.console.print("[bold red]Command failed with error:[/bold red]")
+                    self.console.print(process.stderr)
+                
+                outputs.append({
+                    "command": cmd,
+                    "stdout": process.stdout,
+                    "stderr": process.stderr,
+                    "return_code": process.returncode,
+                    "success": process.returncode == 0
+                })
+            
+            except Exception as e:
+                self.console.print(f"[bold red]Error executing command: {str(e)}[/bold red]")
+                outputs.append({
+                    "command": cmd,
+                    "error": str(e),
+                    "success": False
+                })
+            
+        # Store execution info for potential rollback
+        execution_info = {
+            "executed": True,
+            "commands": plan.commands,
+            "outputs": outputs,
+            "backup_path": backup_path,
+            "timestamp": get_timestamp()
+        }
+        
+        self.last_execution = execution_info
+        
+        # Final summary
+        success_count = sum(1 for output in outputs if output.get("success", False))
+        if success_count == len(plan.commands):
+            self.console.print("\n[bold green] All commands executed successfully![/bold green]")
+        else:
+            self.console.print(f"\n[bold yellow]⚠️ {success_count}/{len(plan.commands)} commands succeeded[/bold yellow]")
+            if backup_path:
+                self.console.print(f"[blue]A backup was created at: {backup_path}[/blue]")
+                self.console.print("[blue]You can restore it with 'termora rollback last'[/blue]")
+        
+        return execution_info
+    
+    def _infer_backup_paths(self, commands: List[str]) -> List[str]:
+        """
+        Infer paths that should be backed up based on commands.
+        
+        Args:
+            commands: List of shell commands
+            
+        Returns:
+            List of paths that should be backed up
+        """
+        backup_paths = set()
+        
+        # Patterns to look for in destructive commands
+        patterns = [
+            # rm/rmdir commands: extract paths after the command and options
+            (r'rm\s+(?:-[rf]+\s+)*(.+)', 1),
+            # mv commands: extract the source path (not the destination)
+            (r'mv\s+(?:-[if]+\s+)*(.+?)\s+[^\s]+$', 1),
+            # redirect operations: extract the file being written to
+            (r'>\s*(.+)', 1),
+            # sed -i: extract the file being modified
+            (r'sed\s+-i.*\s+(.+)', 1),
+        ]
+        
+        for cmd in commands:
+            if is_destructive_command(cmd):
+                for pattern, group in patterns:
+                    match = re.search(pattern, cmd)
+                    if match:
+                        # Extract the path and split if multiple paths
+                        paths = match.group(group).split()
+                        for path in paths:
+                            # Remove any quotes or trailing characters
+                            clean_path = path.strip('\'"')
+                            if clean_path:
+                                backup_paths.add(clean_path)
+        
+        return list(backup_paths)
