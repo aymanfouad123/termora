@@ -78,7 +78,7 @@ class TestCommandExecutor(unittest.TestCase):
     def test_confirm_execution_auto(self):
         """Test that auto_confirm works correctly."""
         plan = CommandPlan(
-            explaination="Test explaination",
+            explanation="Test explaination",
             commands=["echo 'hello'"],
             requires_backup=False
         )
@@ -133,6 +133,7 @@ class TestCommandExecutor(unittest.TestCase):
         ]
 
         for path in expected_paths:
+            print(f"Checking if {path} is in backup_paths")
             self.assertIn(path, backup_paths)
     
     def test_execute_plan_debug_mode(self):
@@ -157,4 +158,43 @@ class TestCommandExecutor(unittest.TestCase):
             # Check that the file still exists (command wasn't actually run)
             self.assertTrue(os.path.exists(f"{self.temp_dir}/test_file1.txt"))
     
+    @patch('subprocess.run')
+    def test_execute_plan_success(self, mock_run):
+        """Test that execute_plan correctly executes commands."""
+        # Mock subprocess.run to return success
+        mock_process = MagicMock()
+        mock_process.returncode = 0
+        mock_process.stdout = "Command output"
+        mock_process.stderr = ""
+        mock_run.return_value = mock_process
         
+        # Creating a command plan with a non-destructive command
+        plan = CommandPlan(
+            explanation="Test explanation",
+            commands=[f"echo 'Test'"],
+            requires_backup=False
+        )
+        
+        # Create executor with auto_confirm and without debug mode
+        executor = CommandExecutor(auto_confirm=True, debug=False)
+        
+        # Mock the console to prevent output
+        with patch.object(executor, 'console'):
+            # Execute the plan
+            result = executor.execute_plan(plan)
+            
+            # Check that execution was marked as executed
+            self.assertTrue(result["executed"])
+            
+            # Check that subprocess.run was called with the command
+            mock_run.assert_called_once()
+            args, kwargs = mock_run.call_args
+            self.assertEqual(kwargs['shell'], True)
+            
+            # Check that output was captured
+            self.assertEqual(result["outputs"][0]["stdout"], "Command output")
+            self.assertEqual(result["outputs"][0]["return_code"], 0)
+            self.assertTrue(result["outputs"][0]["success"])
+
+if __name__ == "__main__":
+    unittest.main()

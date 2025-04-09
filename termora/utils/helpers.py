@@ -89,7 +89,7 @@ def is_destructive_command(command: str) -> bool:
     # List of potentially destructive commands
     destructive_cmds = [
         "rm", "rmdir", "mv", "dd", "mkfs", "fdisk", "format",
-        "shutdown", "reboot", "del", "truncate", ">", "tee"
+        "shutdown", "reboot", "del", "truncate", ">", "tee", "sed" 
     ]
     
     # Check if any destructive command is present

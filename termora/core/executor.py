@@ -309,7 +309,7 @@ class CommandExecutor:
             # redirect operations: extract the file being written to
             (r'>\s*(.+)', 1),
             # sed -i: extract the file being modified
-            (r'sed\s+-i.*\s+(.+)', 1),
+            (r'sed\s+.*\s+([^\s]+)$', 1),
         ]
         
         for cmd in commands:
