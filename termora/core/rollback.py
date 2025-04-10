@@ -159,4 +159,110 @@ class RollbackManager:
             
         except (json.JSONDecodeError, IndexError, FileNotFoundError):
             return None
+    
+    def rollback_last(self) -> bool:
+        """
+        Rollback the last operation.
         
+        Returns:
+            True if rollback was successful, False otherwise
+        """
+        # Get last execution info
+        last_execution = self.get_last_execution()
+        
+        if not last_execution:
+            self.console.print("[yellow]No previous execution found to rollback.[/yellow]")
+            return False
+        
+        backup_path = last_execution.get("backup_path")
+        if not backup_path or not os.path.exists(backup_path):
+            self.console.print("[red]Backup file not found for the last execution.[/red]")
+            return False
+        
+        # Perform the rollback
+        self.console.print(f"[blue]Rolling back last operation using backup: {backup_path}[/blue]")
+        result = self._restore_from_backup(backup_path)
+        
+        if result:
+            self.console.print("[green]Rollback completed successfully.[/green]")
+        else:
+            self.console.print("[red]Rollback failed.[/red]")
+            
+        return result
+    
+    def rollback_specific(self, backup_id: str) -> bool:
+        """
+        Rollback to a specific backup.
+        
+        Args:
+            backup_id: ID of the backup to restore
+            
+        Returns:
+            True if rollback was successful, False otherwise
+        """
+        # Find the backup file
+        backup_path = self.backup_dir / backup_id
+        
+        if not backup_path.exists():
+            self.console.print(f"[red]Backup file not found: {backup_id}[/red]")
+            return False
+        
+        # Perform the rollback
+        self.console.print(f"[blue]Rolling back using backup: {backup_path}[/blue]")
+        result = self._restore_from_backup(str(backup_path))
+        
+        if result:
+            self.console.print("[green]Rollback completed successfully.[/green]")
+        else:
+            self.console.print("[red]Rollback failed.[/red]")
+            
+        return result
+    
+    def _restore_from_backup(self, backup_path: str) -> bool:
+        """
+        Restore files from a backup archive.
+        
+        Args:
+            backup_path: Path to the backup archive
+            
+        Returns:
+            True if restoration was successful, False otherwise
+        """
+        try:
+            # Create a temporary directory to extract the backup
+            with tempfile.TemporaryDirectory() as temp_dir:
+                temp_path = Path(temp_dir)
+                
+                # Extract the backup
+                self.console.print("[blue]Extracting backup...[/blue]")
+                with tarfile.open(backup_path, "r:gz") as tar:
+                    tar.extractall(path=temp_path)
+                
+                # Restore files from the extracted backup
+                self.console.print("[blue]Restoring files...[/blue]")
+                
+                # Count total files for progress bar
+                file_count = sum(1 for _ in temp_path.glob("**/*") if _.is_file())
+                
+                with Progress() as progress:
+                    restore_task = progress.add_task("[green]Restoring...", total=file_count)
+                    
+                    for source_path in temp_path.glob("**/*"):
+                        if source_path.is_file():
+                            # Compute the target path (absolute path from root)
+                            rel_path = source_path.relative_to(temp_path)
+                            target_path = Path("/") / rel_path
+                            # Create parent directories if needed
+                            target_path.parent.mkdir(parents=True, exist_ok=True)
+                            
+                            # Copy the file
+                            shutil.copy2(source_path, target_path)
+                            
+                            # Update progress
+                            progress.update(restore_task, advance=1)
+                self.console.print("[green]Restoration complete.[/green]")
+                return True
+                
+        except Exception as e:
+            self.console.print(f"[red]Error during rollback: {str(e)}[/red]")
+            return False
