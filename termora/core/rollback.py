@@ -250,8 +250,10 @@ class RollbackManager:
                     for source_path in temp_path.glob("**/*"):
                         if source_path.is_file():
                             # Compute the target path (absolute path from root)
+                            # This removes the temp directory prefix /tmp/tmpdir123/home/user/documents/important.txt becomes home/user/documents/important.txt
                             rel_path = source_path.relative_to(temp_path)
                             target_path = Path("/") / rel_path
+                            
                             # Create parent directories if needed
                             target_path.parent.mkdir(parents=True, exist_ok=True)
                             
