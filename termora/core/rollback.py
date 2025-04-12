@@ -30,7 +30,7 @@ class RollbackManager:
     
     def __init__(self):
         """Initialize the rollback manager."""
-        self.console = Console(),
+        self.console = Console()
         self.termora_dir = get_termora_dir()
         self.backup_dir = self.termora_dir / "backups"
         self.history_file = self.termora_dir / "execution_history.json"
@@ -157,7 +157,10 @@ class RollbackManager:
                 
             return history[-1]  # Return the latest entry
             
-        except (json.JSONDecodeError, IndexError, FileNotFoundError):
+        except (json.JSONDecodeError, FileNotFoundError):
+            return None
+        except IndexError:
+            # Handle the case when history exists but is empty
             return None
     
     def rollback_last(self) -> bool:
@@ -249,9 +252,9 @@ class RollbackManager:
                     
                     for source_path in temp_path.glob("**/*"):
                         if source_path.is_file():
-                            # Compute the target path (absolute path from root)
-                            # This removes the temp directory prefix /tmp/tmpdir123/home/user/documents/important.txt becomes home/user/documents/important.txt
+                            # Compute the target path (relative to root)
                             rel_path = source_path.relative_to(temp_path)
+                            # Restore to the original location, not to root
                             target_path = Path("/") / rel_path
                             
                             # Create parent directories if needed
