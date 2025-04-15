@@ -3,14 +3,16 @@
 [![Python Version](https://img.shields.io/badge/python-3.8%2B-blue)]()
 [![License](https://img.shields.io/badge/license-MIT-green)]()
 
-Termora is a privacy-first, local-first AI agent that lives in your terminal. It understands natural language and translates your requests into safe, explainable shell commands.
+**Your terminal with a memory.**
 
-Termora is:
+Termora is a context-aware terminal assistant that remembers how you work, learns your patterns, and automates your recurring workflows—all while handling complex one-off tasks with precision and safety.
 
-- 🧠 **Context-aware** (files, OS, shell history)
-- 🛡️ **Safe** (dry-run previews, rollback support, backups)
-- 🔁 **Agentic** (can reason over multi-step workflows)
-- 💬 **Conversational** (you don't have to write in "command speak")
+## Key Capabilities
+
+- **Temporal Intelligence**: Remembers your command history and automates time-based workflows
+- **Context Awareness**: Understands your files, OS, and project environments
+- **Pattern Recognition**: Learns how you work with different projects and adapts to your style
+- **Safety First**: Provides previews, backups, and rollback support for all operations
 
 ## Examples
 
@@ -18,23 +20,31 @@ Say things like:
 
 ```bash
 termora chat
-> organize my downloads folder and group files by type
-> create a daily backup routine to Dropbox
-> mute my Mac when I join Zoom
-> summarize today's git changes
+> find all screenshots from March and move them to a new folder
+> run the git command I used yesterday to find large files
+> every weekday at 9am, open VS Code and do a git pull in my main project
+> set up my development environment like I usually do for this project
 ```
 
-Termora figures out what to do, explains it, and asks you for confirmation. It logs everything locally.
+Termora figures out what to do, explains it, and asks you for confirmation before execution. Unlike other tools, it remembers your past commands and patterns.
 
 ## Features
 
-- **Natural Language Interface**: Just describe what you want done
-- **Context-Aware Reasoning**: Understands your files, OS, and recent commands
+- **Natural Language Interface**: Communicate your intent conversationally
+- **Command History Memory**: Recall and reuse past commands with context
+- **Time-Based Automation**: Schedule recurring tasks and routines
+- **Project Context Recognition**: Adapt behavior based on project environments
 - **Safe Execution**: Preview commands before they run
-- **Automatic Backups**: Creates backups before destructive operations
+- **Automatic Backups**: Create backups before destructive operations
 - **Rollback Support**: `termora rollback last` to undo operations
 - **Multi-model Support**: Works with OpenAI, Groq, Claude, or local Ollama models
 - **Cross-platform**: Supports macOS and Linux
+
+## Why Termora?
+
+Most terminal tools execute in isolation—they have no memory of your past work and no awareness of your patterns. Termora maintains a persistent understanding of how you use your system, enabling it to work the way you do.
+
+The more you use Termora, the more it learns about your preferences, routines, and projects. It doesn't just execute commands; it becomes your intelligent partner in the terminal.
 
 ## Installation
 
@@ -54,18 +64,26 @@ termora chat
 # Run commands automatically without confirmation
 termora chat --auto
 
+# View your command history with context
+termora history
+
+# Set up a recurring workflow
+termora schedule "daily at 5pm" "check git repos for uncommitted changes"
+
 # Rollback the last operation
 termora rollback last
 ```
 
-It's not just a shell tool — it's your agentic terminal copilot.
-
-## 🛡️ Privacy & Security
+## Privacy & Security
 
 - Commands are processed securely with backups for destructive operations
-- All logs stored locally in `~/.termora/`
+- All interaction history stored locally in `~/.termora/`
 - Optional: Use local AI models via Ollama for complete privacy
 
-## 📝 License
+## License
 
 This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+
+---
+
+Termora: Terminal commands with perfect memory.
