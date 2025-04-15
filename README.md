@@ -3,48 +3,76 @@
 [![Python Version](https://img.shields.io/badge/python-3.8%2B-blue)]()
 [![License](https://img.shields.io/badge/license-MIT-green)]()
 
-**Your terminal with a memory.**
+**Your agentic AI terminal with perfect memory, intelligent automation, and reliable rollbacks.**
 
-Termora is a context-aware terminal assistant that remembers how you work, learns your patterns, and automates your recurring workflows—all while handling complex one-off tasks with precision and safety.
+Termora is an intelligent AI-powered terminal assistant that remembers how you work, dynamically reasons through tasks, and executes operations with safety and transparency—all through natural language conversation.
 
 ## Key Capabilities
 
-- **Temporal Intelligence**: Remembers your command history and automates time-based workflows
-- **Context Awareness**: Understands your files, OS, and project environments
-- **Pattern Recognition**: Learns how you work with different projects and adapts to your style
-- **Safety First**: Provides previews, backups, and rollback support for all operations
+- **Agentic Intelligence**: Reasons dynamically about tasks, generating the optimal solution using commands or code
+- **Perfect Memory**: Remembers your entire command history with rich context and adapts to your patterns
+- **Intelligent Automation**: Creates and manages recurring workflows through natural language
+- **Enhanced Safety**: Provides automatic backups and rollback capabilities for terminal operations
 
 ## Examples
 
-Say things like:
+Just say what you want:
 
 ```bash
-termora chat
+termora
 > find all screenshots from March and move them to a new folder
 > run the git command I used yesterday to find large files
-> every weekday at 9am, open VS Code and do a git pull in my main project
-> set up my development environment like I usually do for this project
+> clean up my downloads folder but keep the PDFs from this year
+> remind me to backup my project directory every Friday
+> every weekday at 9am, open VS Code and do a git pull in my main
+project
 ```
 
-Termora figures out what to do, explains it, and asks you for confirmation before execution. Unlike other tools, it remembers your past commands and patterns.
+Termora analyzes your request, shows you exactly what it will do, and executes after your confirmation. Unlike other tools, it remembers your past commands and adapts to how you work.
+
+## Example Use Cases
+
+### Intelligent File Management
+
+```
+> Keep only the 10 newest versions of each log file and compress the rest
+> Find duplicate files across my home directory and help me remove them
+> Move all PDFs from my downloads that contain "invoice" into my tax folder
+```
+
+### System Operations
+
+```
+> Show me the largest files in my home directory
+> Clean up disk space by finding unused packages and cached files
+> Check which processes are using the most memory right now
+```
+
+### Smart Automation
+
+```
+> Check my disk space every morning and alert me if it's below 10%
+> Archive my log files at the end of each week
+> Restart my local server if it stops responding
+```
 
 ## Features
 
-- **Natural Language Interface**: Communicate your intent conversationally
-- **Command History Memory**: Recall and reuse past commands with context
-- **Time-Based Automation**: Schedule recurring tasks and routines
-- **Project Context Recognition**: Adapt behavior based on project environments
-- **Safe Execution**: Preview commands before they run
-- **Automatic Backups**: Create backups before destructive operations
-- **Rollback Support**: `termora rollback last` to undo operations
-- **Multi-model Support**: Works with OpenAI, Groq, Claude, or local Ollama models
+- **True Natural Language**: Communicate your intent conversationally with zero command syntax
+- **Dynamic Reasoning**: Generates shell commands or Python code based on what's needed for the task
+- **Perfect Command Memory**: Recalls and applies your past solutions in similar contexts
+- **Adaptable Execution**: Chooses the most efficient approach to solve any given task
+- **Intelligent Automation**: Creates recurring tasks that respond to time and system conditions
+- **Transparent Execution**: Shows you exactly what it will do before doing it
+- **Enhanced Safety**: Creates targeted backups and provides rollback capabilities for terminal operations
+- **AI Flexibility**: Works with OpenAI, Groq, Claude, or local Ollama models for privacy
 - **Cross-platform**: Supports macOS and Linux
 
 ## Why Termora?
 
-Most terminal tools execute in isolation—they have no memory of your past work and no awareness of your patterns. Termora maintains a persistent understanding of how you use your system, enabling it to work the way you do.
+Most terminal tools require exact command syntax or scripting for complex tasks. Termora lets you describe what you want in natural language and figures out how to make it happen—whether that means running shell commands, generating code, or combining multiple tools.
 
-The more you use Termora, the more it learns about your preferences, routines, and projects. It doesn't just execute commands; it becomes your intelligent partner in the terminal.
+What makes Termora unique is its memory—it remembers how you've solved similar problems before and adapts to your personal patterns, becoming more personalized the more you use it.
 
 ## Installation
 
@@ -57,28 +85,20 @@ pip install -e .
 
 ## Usage
 
+Simply start Termora and tell it what you want in natural language:
+
 ```bash
-# Start a conversation with Termora
-termora chat
-
-# Run commands automatically without confirmation
-termora chat --auto
-
-# View your command history with context
-termora history
-
-# Set up a recurring workflow
-termora schedule "daily at 5pm" "check git repos for uncommitted changes"
-
-# Rollback the last operation
-termora rollback last
+termora
 ```
+
+That's it. No commands to learn, no flags to remember. Just describe what you want, and Termora figures out the rest.
 
 ## Privacy & Security
 
-- Commands are processed securely with backups for destructive operations
-- All interaction history stored locally in `~/.termora/`
-- Optional: Use local AI models via Ollama for complete privacy
+- All processing can happen locally on your machine with Ollama
+- Command history remains private and secure in `~/.termora/`
+- Automatic backups protect against unintended changes
+- Full transparency in what commands will be executed
 
 ## License
 
@@ -86,4 +106,4 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 ---
 
-Termora: Terminal commands with perfect memory.
+Termora: Your AI-powered terminal with perfect memory, intelligent automation, and enhanced safety.

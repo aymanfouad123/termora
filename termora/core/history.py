@@ -166,3 +166,100 @@ class HistoryManager:
             
         # No project detected
         return None
+    
+    def _categorize_command(self, command: str) -> str:
+        """
+        Categorize a command by type.
+        
+        Args:
+            command: The command string
+            
+        Returns:
+            Command category as string
+        """
+        
+        # This is a simple categorization that will be expanded later
+        command = command.strip().split()[0] if command.strip() else ""
+        
+        # Common command categories
+        if command in ["git", "svn", "hg"]:
+            return "version_control"
+        elif command in ["cd", "ls", "dir", "pwd", "mv", "cp", "rm"]:
+            return "filesystem"
+        elif command in ["python", "python3", "pip", "pipenv", "venv"]:
+            return "python_dev"
+        elif command in ["npm", "yarn", "node"]:
+            return "node_dev"
+        elif command in ["docker", "docker-compose", "kubectl"]:
+            return "container"
+        else:
+            return "other"
+        
+    def search_history(self, query: str = "", 
+                      directory: Optional[str] = None,
+                      limit: int = 10) -> List[Dict[str, Any]]:
+        """
+        Search command history with filtering.
+        
+        Args:
+            query: Search term to find in commands
+            directory: Filter by directory
+            limit: Maximum number of results
+            
+        Returns:
+            List of matching history entries
+        """
+        results = []
+        
+        for entry in reversed(self.history):  # Most recent first
+            # Apply filters
+            if query and query.lower() not in entry["command"].lower():
+                continue
+                
+            if directory and entry.get("directory") != directory:
+                continue
+            
+            results.append(entry)
+            
+            if len(results) >= limit:
+                break
+                
+        return results
+    
+    def get_command_patterns(self, directory: Optional[str] = None) -> List[Dict[str, Any]]:
+        """
+        Identify common command patterns in history.
+        
+        Args:
+            directory: Optional directory to limit pattern analysis to
+            
+        Returns:
+            List of command patterns with frequency information
+        """
+        # This is a placeholder for more sophisticated pattern analysis
+        command_counts = {}
+        
+        for entry in self.history:
+            # Skip if we're filtering by directory and this doesn't match
+            if directory and entry.get("directory") != directory:
+                continue
+                
+            command = entry["command"]
+            
+            # Count command occurrences
+            if command in command_counts:
+                command_counts[command] += 1
+            else:
+                command_counts[command] = 1
+        
+        # Convert to sorted list
+        patterns = [
+            {"command": cmd, "count": count}
+            for cmd, count in command_counts.items()
+        ]
+        
+        # Sort by frequency (most frequent first)
+        patterns.sort(key=lambda x: x["count"], reverse=True)
+        
+        return patterns[:10]  # Return top 10 patterns
+    
