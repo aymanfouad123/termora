@@ -3,12 +3,13 @@ AI Agent module for Termora.
 
 This module handles the core intelligence of Termora, managing the 
 interaction with AI models to process natural language requests and 
-generate executable command plans.
+generate executable action plans (using shell commands or Python code).
 """
 
 import os
 import json
 import time
+import tempfile
 from typing import Dict, List, Optional, Tuple, Any, Union
 from pathlib import Path
 import re
@@ -20,68 +21,83 @@ import requests
 
 # Internal imports
 from termora.core.context import TerminalContext
+from termora.core.history import HistoryManager
+from termora.utils.helpers import get_termora_dir
 
-class CommandPlan:
+class ActionPlan:
     """
-    Represents a structured plan of commands to be executed.
+    Represents a structured plan of actions to be executed.
     
-    This class encapsulates the AI's response as a structured plan with explanation, commands, and backup information.
+    This class encapsulates the AI's response as a structured plan that can contain shell commands, Python code, or a combination of both.
     """
     
     def __init__(
         self,
         explanation: str,
-        commands: List[str],
+        actions: List[Dict[str, Any]],
         requires_confirmation: bool = True,
         requires_backup: bool = False,
         backup_paths: Optional[List[str]] = None
     ):
         """
-        Initialize a command plan.
+        Initialize an action plan.
         
         Args:
-            explanation: Human-readable explanation of what the commands will do
-            commands: List of shell commands to execute
+            explanation: Human-readable explanation of what the plan will do
+            actions: List of action objects (commands or code)
             requires_confirmation: Whether user confirmation is needed
             requires_backup: Whether files should be backed up before execution
             backup_paths: Paths to back up if requires_backup is True
         """
+        
         self.explanation = explanation
-        self.commands = commands
+        self.actions = actions
         self.requires_confirmation = requires_confirmation
         self.requires_backup = requires_backup
         self.backup_paths = backup_paths or []
     
+    @property
+    def has_python_code(self) -> bool:
+        """Check if any action contains Python code."""
+        return any(action.get("type") == "python_code" for action in self.actions)
+    
+    @property
+    def commands(self) -> List[str]:
+        """Get list of shell commands (for backward compatibility)."""
+        return [action["content"] for action in self.actions 
+                if action.get("type") == "shell_command"]
+    
     def to_dict(self) -> Dict[str, Any]:
         """
-        Convert the command plan to a dictionary for serialization.
+        Convert the action plan to a dictionary for serialization.
         
         Returns:
-            A dictionary representation of the command plan
+            A dictionary representation of the action plan
         """
         return {
             "explanation": self.explanation,
-            "commands": self.commands,
+            "actions": self.actions,
             "requires_confirmation": self.requires_confirmation,
             "requires_backup": self.requires_backup,
             "backup_paths": self.backup_paths
         }
     
     @classmethod
-    def from_dict(cls, data: Dict[str, Any]) -> 'CommandPlan':
+    def from_dict(cls, data: Dict[str, Any]) -> 'ActionPlan':
         """
-        Create a command plan from a dictionary.
+        Create an action plan from a dictionary.
         
         Args:
-            data: Dictionary containing command plan information
+            data: Dictionary containing action plan information
             
         Returns:
-            A CommandPlan instance
+            An ActionPlan instance
         """
+        
         return cls(
-            explaination = data.get("explanation", ""),
-            commands = data.get("commands", []),
-            requires_confirmation = data.get("requires_confirmation", True),
+            explanation=data.get("explanation", ""),
+            actions=data.get("actions", []),
+            requires_confirmation=data.get("requires_confirmation", True),
             requires_backup=data.get("requires_backup", False),
             backup_paths=data.get("backup_paths", [])
         )
