@@ -107,7 +107,7 @@ class TermoraAgent:
     The core intelligence of Termora.
     
     This class handles the interaction with AI models to process
-    natural language requests and generate executable command plans.
+    natural language requests and generate executable action plans.
     """
     
     def __init__(self, config: Optional[Dict[str, Any]] = None):
@@ -126,7 +126,7 @@ class TermoraAgent:
             "ai_provider": os.getenv("AI_PROVIDER", "groq"),
             "ai_model": os.getenv("AI_MODEL", "llama3-70b-8192"),
             "api_key": None,  # Will be set based on provider
-            "max_tokens": int(os.getenv("MAX_TOKENS", "500")),
+            "max_tokens": int(os.getenv("MAX_TOKENS", "2000")),  # Increased for code generation
             "temperature": float(os.getenv("TEMPERATURE", "0.7")),
             "send_to_api": os.getenv("SEND_TO_API", "True").lower() == "true",
             "ollama_host": os.getenv("OLLAMA_HOST", "http://localhost:11434")
@@ -140,6 +140,9 @@ class TermoraAgent:
         
         # Create context gatherer
         self.context = TerminalContext()
+        
+        # Create history manager
+        self.history_manager = HistoryManager()
         
     def _set_api_key(self):
         """Set the appropriate API key based on the configured provider."""
@@ -169,47 +172,98 @@ class TermoraAgent:
         # Get system context as string
         context_str = self.context.to_string()
         
+        # Get relevant history
+        relevant_history = self._get_relevant_history(user_request)
+        history_str = self._format_history(relevant_history)
+        
         # Build the complete prompt
-        prompt = f"""You are Termora, an AI terminal assistant that helps users accomplish tasks by generating shell commands.
+        prompt = f"""You are Termora, an agentic AI terminal assistant that helps users accomplish tasks by generating the optimal solution.
 
         {context_str}
+
+        RELEVANT HISTORY:
+        {history_str}
 
         USER REQUEST: {user_request}
 
         INSTRUCTIONS:
-        1. Analyze the request and determine what commands would accomplish the task.
-        2. Consider the OS and current environment when generating commands.
-        3. Always use safe approaches that won't cause data loss.
-        4. For destructive operations (remove, move, etc.), identify paths that should be backed up.
+        1. Analyze the request and determine the best approach to accomplish the task.
+        2. You can use shell commands, generate Python code, or a combination of both.
+        3. Consider the OS and current environment when generating your solution.
+        4. Always use safe approaches that won't cause data loss.
+        5. For potentially destructive operations, identify paths that should be backed up.
 
         RESPONSE FORMAT:
         Return your response in the following JSON format:
         {{
-        "explanation": "A clear explanation of what your plan will do",
-        "commands": ["command1", "command2", ...],
-        "requires_backup": boolean,
-        "backup_paths": ["path1", "path2", ...]
+            "explanation": "A clear explanation of what your plan will do",
+            "actions": [
+                {{
+                    "type": "shell_command",
+                    "content": "command to execute",
+                    "explanation": "what this command does"
+                }},
+                {{
+                    "type": "python_code",
+                    "content": "Python code to execute",
+                    "explanation": "what this code does",
+                    "dependencies": ["package1", "package2"]
+                }}
+            ],
+            "requires_backup": boolean,
+            "backup_paths": ["path1", "path2", ...]
         }}
 
         IMPORTANT: Your response must be valid JSON that can be parsed with json.loads().
-        If you're not confident about a command's safety, you should:
-        1. Explain the risk in the explanation section
-        2. Mark requires_backup as true
-        3. Add any paths that might be affected to backup_paths
+        For Python code, be sure to include any necessary imports.
+        If a task would be better accomplished with Python code than shell commands, don't hesitate to use Python.
         """
         
         return prompt
     
-    async def process_request(self, user_request: str) -> CommandPlan:
+    def _get_relevant_history(self, user_request: str) -> List[Dict[str, Any]]:
         """
-        Process a user request and return a command plan.
+        Get relevant command history based on the user request.
+        
+        Args:
+            user_request: The user's natural language request
+            
+        Returns:
+            List of relevant history entries
+        """
+        # Currently a simple implementation - will be enhanced later
+        # Get the 5 most recent commands
+        return self.history_manager.search_history(limit=5)
+    
+    def _format_history(self, history: List[Dict[str, Any]]) -> str:
+        """Format history entries into a string for the prompt."""
+        if not history:
+            return "No relevant history found."
+        
+        result = []
+        for entry in history:
+            cmd = entry.get("command", "")
+            dir_path = entry.get("directory", "")
+            timestamp = entry.get("timestamp", "")
+            
+            result.append(f"Command: {cmd}")
+            result.append(f"Directory: {dir_path}")
+            result.append(f"Time: {timestamp}")
+            result.append("")  # Empty line for separation
+            
+        return "\n".join(result)
+    
+    async def process_request(self, user_request: str) -> ActionPlan:
+        """
+        Process a user request and return an action plan.
         
         Args:
             user_request: The natural language request from the user
             
         Returns:
-            A CommandPlan object
+            An ActionPlan object
         """
+        
         # Create the prompt
         prompt = self.create_prompt(user_request)
         
@@ -320,61 +374,87 @@ class TermoraAgent:
             "backup_paths": []
         })
         
-    def _parse_response(self, response: str, original_request: str) -> CommandPlan:
+    def _parse_response(self, response: str, original_request: str) -> ActionPlan:
         """
-        Parse the AI response into a structured command plan.
+        Parse the AI response into an ActionPlan.
         
         Args:
-            response: The AI response string
+            response: The raw response from the AI
             original_request: The original user request
             
         Returns:
-            A CommandPlan object
+            An ActionPlan object
         """
-        # Try to parse as JSON
+        
         try:
-            # Looking for a JSON code block using regex
-            json_match = re.search(r"```json\s*(.*?)\s*```", response, re.DOTALL)
+            # Try to extract JSON from the response
+            json_match = re.search(r'{.*}', response, re.DOTALL)
             if json_match:
-                json_str = json_match.group(1)
+                json_str = json_match.group(0)
+                data = json.loads(json_str)
+                
+                # Create ActionPlan from the data
+                return ActionPlan(
+                    explanation=data.get("explanation", ""),
+                    actions=data.get("actions", []),
+                    requires_confirmation=True,
+                    requires_backup=data.get("requires_backup", False),
+                    backup_paths=data.get("backup_paths", [])
+                )
             else:
-                # Try to find any JSON object in the response
-                json_match = re.search(r"({.*})", response, re.DOTALL)
-                if json_match:
-                    json_str = json_match.group(1)
-                else:
-                    json_str = response
-            
-            data = json.loads(json_str)
-            
-            # Ensure required fields exist
-            if "commands" not in data:
-                data["commands"] = []
-            if "explanation" not in data:
-                data["explanation"] = "No explanation provided."
-
-            # Check if any command is destructive
-            requires_backup = data.get("requires_backup", False)
-            for cmd in data.get("commands", []):
-                from termora.utils.helpers import is_destructive_command
-                if is_destructive_command(cmd):
-                    requires_backup = True
-                    break
-                    
-            # Create the command plan
-            return CommandPlan(
-                explanation=data["explanation"],
-                commands=data["commands"],
-                requires_backup=requires_backup,
-                backup_paths=data.get("backup_paths", [])
-            )
-            
+                raise ValueError("No JSON found in response")
         except Exception as e:
-            # If parsing fails, return a fallback command plan
-            print(f"Error parsing AI response: {str(e)}")
-            return CommandPlan(
-                explanation=f"I couldn't generate a proper command plan for: '{original_request}'",
-                commands=[f"echo 'Error: Could not parse the AI response for your request.'"],
+            # If parsing fails, create a simple fallback plan
+            return ActionPlan(
+                explanation=f"I'm sorry, I couldn't properly process your request: {original_request}",
+                actions=[
+                    {
+                        "type": "shell_command",
+                        "content": "echo 'Request could not be processed. Please try again with a clearer description.'",
+                        "explanation": "Display an error message"
+                    }
+                ],
                 requires_confirmation=True,
                 requires_backup=False
             )
+    
+    async def execute_python_code(self, code: str) -> Dict[str, Any]:
+        """
+        Execute Python code in a safe temporary environment.
+        
+        Args:
+            code: Python code to execute
+            
+        Returns:
+            Dict with execution results
+        """
+        try:
+            # Create a temporary directory and file
+            with tempfile.TemporaryDirectory() as temp_dir:
+                script_path = Path(temp_dir) / "termora_script.py"
+                
+                # Write code to file
+                with open(script_path, "w") as f:
+                    f.write(code)
+                
+                # Execute the Python script
+                process = subprocess.run(
+                    [sys.executable, str(script_path)],
+                    capture_output=True,
+                    text=True
+                )
+                
+                return {
+                    "success": process.returncode == 0,
+                    "output": process.stdout,
+                    "error": process.stderr,
+                    "return_code": process.returncode
+                }
+                
+        except Exception as e:
+            return {
+                "success": False,
+                "output": "",
+                "error": str(e),
+                "return_code": 1
+            }
