@@ -63,7 +63,7 @@ class CommandExecutor:
         Display a command plan to the user.
         
         Args:
-            plan: A CommandPlan instance
+            plan: An ActionPlan instance
         """
         self.console.print("\n[bold green] Termora Plan:[/bold green]")
         
@@ -74,20 +74,40 @@ class CommandExecutor:
             border_style="blue"
         ))
         
-        # Display commands
-        self.console.print("[bold]Commands to execute:[/bold]")
-        for i, cmd in enumerate(plan.commands, 1):
+        # Display actions
+        self.console.print("[bold]Actions to execute:[/bold]")
+    
+        for i, action in enumerate(plan.actions, 1):
+            action_type = action.get("type", "shell_command")
+            content = action.get("content", "")
+            explanation = action.get("explanation", "")
+            
+            # Choose language for syntax highlighting
+            language = "bash" if action_type == "shell_command" else "python"
+            
+            # Set color based on action type and content
+            if action_type == "shell_command" and is_destructive_command(content):
+                border_style = "yellow"
+            elif action_type == "python_code":
+                border_style = "purple"
+            else:
+                border_style = "green"
+            
+            title = f"[bold]{action_type.replace('_', ' ').title()} {i}[/bold]"     # Basic formatting 
+            if explanation:
+                title += f": {explanation}"
+                
             self.console.print(
                 Panel(
-                    Syntax(cmd, "bash", theme="monokai", line_numbers=False),
-                    title=f"[bold]Command {i}[/bold]",
-                    border_style="yellow" if is_destructive_command(cmd) else "green"
+                    Syntax(content, language, theme="monokai", line_numbers=False),
+                    title=title,
+                    border_style=border_style
                 )
             )
-        
+            
         # Display backup info if needed
         if plan.requires_backup:
-            self.console.print("[bold yellow]⚠️ This operation requires backup for safety[/bold yellow]")
+            self.console.print("[bold yellow] This operation requires backup for safety[/bold yellow]")
             if plan.backup_paths:
                 self.console.print("The following paths will be backed up:")
                 for path in plan.backup_paths:
@@ -98,7 +118,7 @@ class CommandExecutor:
         Ask for user confirmation before executing a plan.
         
         Args:
-            plan: A CommandPlan instance
+            plan: An ActionPlan instance
             
         Returns:
             Whether the user confirmed execution
@@ -109,10 +129,10 @@ class CommandExecutor:
             return True
             
         if self.debug:
-            self.console.print("[yellow]Debug mode enabled. Commands will not be executed.[/yellow]")
+            self.console.print("[yellow]Debug mode enabled. Actions will not be executed.[/yellow]")
             return False
             
-        return Confirm.ask("Run these commands?")
+        return Confirm.ask("Run these actions?")
 
     def create_backup(self, paths: List[str]) -> str:
         """
@@ -176,13 +196,13 @@ class CommandExecutor:
     
     def execute_plan(self, plan) -> Dict[str, Any]:
         """
-        Execute a command plan.
+        Execute an action plan.
         
         Args:
-            plan: A CommandPlan instance
+            plan: An ActionPlan instance
             
         Returns:
-            Execution result with commands, outputs, and backup info
+            Execution result with actions, outputs, and backup info
         """
         
         # Display the plan
@@ -206,8 +226,11 @@ class CommandExecutor:
             backup_paths = plan.backup_paths
             if not backup_paths:
                 # If no specific paths provided, infer from commands
-                backup_paths = self._infer_backup_paths(plan.commands)
-                
+                shell_commands = [action["content"] for action in plan.actions 
+                             if action.get("type") == "shell_command"]
+                backup_paths = self._infer_backup_paths(shell_commands)
+            
+            
             if backup_paths:
                 backup_path = self.create_backup(backup_paths)
         
@@ -217,50 +240,38 @@ class CommandExecutor:
             return {
                 "executed": False,
                 "reason": "Debug mode",
-                "commands": plan.commands,
-                "outputs": ["Debug mode: Command not executed"] * len(plan.commands),
+                "actions": plan.actions,
+                "outputs": [],
                 "backup_path": backup_path
             }
         
          # Execute commands
-        self.console.print("\n[bold blue] Executing commands...[/bold blue]")
+        self.console.print("\n[bold blue] Executing actions...[/bold blue]")
         outputs = []
         
-        for i, cmd in enumerate(plan.commands, 1):
-            self.console.print(f"\n[bold]Running command {i}/{len(plan.commands)}:[/bold]")
-            self.console.print(Syntax(cmd, "bash", theme="monokai"))
+        for i, action in enumerate(plan.actions, 1):
+            action_type = action.get("type", "shell_command")
+            content = action.get("content", "")
+            
+            self.console.print(f"\n[bold]Running {action_type.replace('_', ' ')} {i}/{len(plan.actions)}:[/bold]")
+            language = "bash" if action_type == "shell_command" else "python"
+            self.console.print(Syntax(content, language, theme="monokai"))
             
             try:
-                # Execute the command
-                process = subprocess.run(
-                    cmd,
-                    shell=True,
-                    capture_output=True,
-                    text=True
-                )
+                if action_type == "shell_command":
+                    # Execute shell command
+                    output = self._execute_shell_command(content)
+                elif action_type == "python_code":
+                    # Execute Python code
+                    output = self._execute_python_code(content)
+                else:
+                    raise ValueError(f"Unknown action type: {action_type}")
                 
-                # Capture output
-                if process.stdout:
-                    self.console.print("[green]Output:[/green]")
-                    self.console.print(process.stdout)
-                
-                # Capture errors
-                if process.returncode != 0:
-                    self.console.print("[bold red]Command failed with error:[/bold red]")
-                    self.console.print(process.stderr)
-                
-                outputs.append({
-                    "command": cmd,
-                    "stdout": process.stdout,
-                    "stderr": process.stderr,
-                    "return_code": process.returncode,
-                    "success": process.returncode == 0
-                })
-            
+                outputs.append(output)
             except Exception as e:
-                self.console.print(f"[bold red]Error executing command: {str(e)}[/bold red]")
+                self.console.print(f"[bold red]Error executing {action_type}: {str(e)}[/bold red]")
                 outputs.append({
-                    "command": cmd,
+                    "action": action,
                     "error": str(e),
                     "success": False
                 })
@@ -268,7 +279,7 @@ class CommandExecutor:
         # Store execution info for potential rollback
         execution_info = {
             "executed": True,
-            "commands": plan.commands,
+            "actions": plan.actions,
             "outputs": outputs,
             "backup_path": backup_path,
             "timestamp": get_timestamp()
@@ -278,10 +289,12 @@ class CommandExecutor:
         
         # Final summary
         success_count = sum(1 for output in outputs if output.get("success", False))
-        if success_count == len(plan.commands):
-            self.console.print("\n[bold green] All commands executed successfully![/bold green]")
+        total_count = len(plan.actions)
+        
+        if success_count == total_count:
+            self.console.print(f"\n[bold green] All {total_count} actions executed successfully![/bold green]")
         else:
-            self.console.print(f"\n[bold yellow]⚠️ {success_count}/{len(plan.commands)} commands succeeded[/bold yellow]")
+            self.console.print(f"\n[bold yellow]⚠️ {success_count}/{total_count} actions succeeded[/bold yellow]")
             if backup_path:
                 self.console.print(f"[blue]A backup was created at: {backup_path}[/blue]")
                 self.console.print("[blue]You can restore it with 'termora rollback last'[/blue]")
