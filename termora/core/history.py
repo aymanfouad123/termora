@@ -1,8 +1,7 @@
 """
 History management module for Termora.
 
-This module handles tracking, storing, and analyzing command history with rich context
-to enable Termora's temporal intelligence features.
+This module handles tracking, storing, and analyzing command history with rich context to enable Termora's temporal intelligence features.
 """
 
 import os
@@ -22,7 +21,7 @@ class HistoryManager:
     This class is responsible for:
     1. Recording commands with their execution context
     2. Storing and retrieving history
-    3. Analyzing patterns in command usage
+    3. Analyzing patterns in usage
     4. Providing context-aware search capabilities
     """
     
@@ -83,13 +82,14 @@ class HistoryManager:
             The newly created history entry
         """
         
-        # Create entry with rich metadata
+        # Create entry with rich metadata context
         entry = {
+            "action_type": "shell_command",  # Specifing this is a shell command for compatibility
             "command": command,
             "directory": directory,
             "timestamp": get_timestamp(),
             "unix_timestamp": time.time(),
-            "output": output[:1000] if output else "",  # Limit output size
+            "output": output[:1000] if output else "",  # Limiting output size
             "exit_code": exit_code,
             "duration": duration
         }
@@ -98,6 +98,71 @@ class HistoryManager:
         entry["context"] = self._gather_command_context(command, directory)
         
         # Add to history and save
+        self.history.append(entry)
+        self._save_history()
+        
+        return entry
+    
+    def add_python_execution(self, code: str, directory: str, output: str = "", exit_code: int = 0, duration: float = 0.0) -> Dict[str, Any]:
+        """
+        Add a Python code execution to the history with context metadata.
+        
+        Args:
+            code: The Python code that was executed
+            directory: The working directory where the code was run
+            output: The code's output (optional)
+            exit_code: The code's exit code (optional)
+            duration: How long the execution took in seconds (optional)
+            
+        Returns:
+            The newly created history entry
+        """
+
+        entry = {
+            "action_type": "python_code",  # Specifing this is Python code
+            "code": code[:2000],  # Limiting the code size
+            "directory": directory,
+            "timestamp": get_timestamp(),
+            "unix_timestamp": time.time(),
+            "output": output[:1000] if output else "",  # Limiting output size
+            "exit_code": exit_code,
+            "duration": duration
+        }
+        
+        entry["context"] = self._gather_python_context(code, directory)
+        
+        self.history.append(entry)
+        self._save_history()
+        
+        return entry
+    
+    def add_action_plan(self, plan, results: Dict[str, Any], directory: str) -> Dict[str, Any]:
+        """
+        Add a complete ActionPlan execution to history.
+        
+        Args:
+            plan: The ActionPlan that was executed
+            results: The execution results
+            directory: The working directory
+            
+        Returns:
+            The newly created history entry
+        """
+        
+        # Creating an entry for the overall action plan
+        entry = {
+            "action_type": "action_plan",
+            "explanation": plan.explanation,
+            "directory": directory,
+            "timestamp": get_timestamp(),
+            "unix_timestamp": time.time(),
+            "actions": plan.actions,
+            "success": results.get("executed", False) and all(
+                output.get("success", False) for output in results.get("outputs", [])
+            ),
+            "backup_path": results.get("backup_path")
+        }
+        
         self.history.append(entry)
         self._save_history()
         
