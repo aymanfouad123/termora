@@ -188,6 +188,54 @@ class HistoryManager:
         
         return context
     
+    def _gather_python_context(self, code: str, directory: str) -> Dict[str, Any]:
+        """
+        Gather additional context about Python code execution.
+        
+        Args:
+            code: The Python code being executed
+            directory: The working directory
+            
+        Returns:
+            Dict with context information
+        """
+        # Basic context for Python code
+        context = {
+            "project": self._detect_project(directory),
+            "files_affected": [],  # Will be populated later
+            "imports": self._extract_python_imports(code),
+            "code_type": self._categorize_python_code(code)
+        }
+        
+        return context
+    
+    def _extract_python_imports(self, code: str) -> List[str]:
+        """Extract import statements from Python code."""
+        imports = []
+        
+        # Very simple approach - will need improvement for complex imports
+        for line in code.split('\n'):
+            line = line.strip()
+            if line.startswith('import ') or line.startswith('from '):
+                imports.append(line)
+                
+        return imports
+    
+    def _categorize_python_code(self, code: str) -> str:
+        """Categorize Python code by type/purpose."""
+        code_lower = code.lower()
+        
+        if 'import os' in code_lower and ('open(' in code_lower or 'os.path' in code_lower):
+            return "file_operation"
+        elif 'import requests' in code_lower or 'urllib' in code_lower:
+            return "networking"
+        elif 'import pandas' in code_lower or 'numpy' in code_lower or 'matplotlib' in code_lower:
+            return "data_analysis"
+        elif 'subprocess' in code_lower:
+            return "system_command"
+        else:
+            return "general"
+    
     def _detect_project(self, directory: str) -> Optional[str]:
         """
         Attempt to detect which project the directory belongs to.
@@ -262,14 +310,16 @@ class HistoryManager:
         
     def search_history(self, query: str = "", 
                       directory: Optional[str] = None,
-                      limit: int = 10) -> List[Dict[str, Any]]:
+                      limit: int = 10,
+                      action_type: Optional[str] = None) -> List[Dict[str, Any]]:
         """
         Search command history with filtering.
         
         Args:
-            query: Search term to find in commands
+            query: Search term to find in commands or code
             directory: Filter by directory
             limit: Maximum number of results
+            action_type: Filter by action type (shell_command, python_code, action_plan)
             
         Returns:
             List of matching history entries
@@ -277,9 +327,20 @@ class HistoryManager:
         results = []
         
         for entry in reversed(self.history):  # Most recent first
-            # Apply filters
-            if query and query.lower() not in entry["command"].lower():
+            # Check action type filter
+            if action_type and entry.get("action_type") != action_type:
                 continue
+                
+            # Apply content filters based on action type
+            entry_type = entry.get("action_type", "shell_command")
+            
+            if query:
+                if entry_type == "shell_command" and query.lower() not in entry.get("command", "").lower():
+                    continue
+                elif entry_type == "python_code" and query.lower() not in entry.get("code", "").lower():
+                    continue
+                elif entry_type == "action_plan" and query.lower() not in entry.get("explanation", "").lower():
+                    continue
                 
             if directory and entry.get("directory") != directory:
                 continue
@@ -291,40 +352,53 @@ class HistoryManager:
                 
         return results
     
-    def get_command_patterns(self, directory: Optional[str] = None) -> List[Dict[str, Any]]:
+    def get_command_patterns(self, directory: Optional[str] = None, action_type: str = "shell_command") -> List[Dict[str, Any]]:
         """
         Identify common command patterns in history.
         
         Args:
             directory: Optional directory to limit pattern analysis to
+            action_type: Filter by action type
             
         Returns:
             List of command patterns with frequency information
         """
         # This is a placeholder for more sophisticated pattern analysis
-        command_counts = {}
+        content_counts = {}
         
         for entry in self.history:
             # Skip if we're filtering by directory and this doesn't match
             if directory and entry.get("directory") != directory:
                 continue
                 
-            command = entry["command"]
-            
-            # Count command occurrences
-            if command in command_counts:
-                command_counts[command] += 1
+            # Skip if entry type doesn't match
+            if entry.get("action_type") != action_type:
+                continue
+                
+            if action_type == "shell_command":
+                content = entry.get("command", "")
+            elif action_type == "python_code":
+                content = entry.get("code", "")[:50]  # First 50 chars as identifier
             else:
-                command_counts[command] = 1
+                continue
+                
+            # Count content occurrences
+            if content in content_counts:
+                content_counts[content] += 1
+            else:
+                content_counts[content] = 1
         
         # Convert to sorted list
-        patterns = [
-            {"command": cmd, "count": count}
-            for cmd, count in command_counts.items()
-        ]
+        patterns = []
+        for content, count in content_counts.items():
+            item = {"count": count}
+            if action_type == "shell_command":
+                item["command"] = content
+            elif action_type == "python_code":
+                item["code"] = content
+            patterns.append(item)
         
         # Sort by frequency (most frequent first)
         patterns.sort(key=lambda x: x["count"], reverse=True)
         
         return patterns[:10]  # Return top 10 patterns
-    
