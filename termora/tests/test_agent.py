@@ -156,6 +156,46 @@ class TestActionPlan:
         assert minimal_plan.requires_backup is False
 
 
+class TestTermoraAgent:
+    """Tests for the TermoraAgent class."""
+    
+    def test_initialization(self):
+        """Test agent initialization with different configs."""
+        
+        # Default initialization
+        agent = TermoraAgent()
+        assert agent.config["ai_provider"] is not None
+        assert agent.config["ai_model"] is not None
+        assert agent.config["send_to_api"] is not None
+        
+        # Custom config
+        custom_agent = TermoraAgent({
+            "ai_provider": "custom",
+            "ai_model": "test-model",
+            "temperature": 0.5
+        })
+        
+        assert custom_agent.config["ai_provider"] == "custom"
+        assert custom_agent.config["ai_model"] == "test-model"
+        assert custom_agent.config["temperature"] == 0.5
+    
+    @patch("termora.core.agent.TerminalContext.to_string")
+    def test_create_prompt(self, mock_context_to_string, agent):
+        """Test prompt creation with context and history."""
+        mock_context_to_string.return_value = "SYSTEM_INFO\nOS: Linux\nCWD: /home/user"
+        
+        with patch.object(agent, "_get_relevant_history", return_value=[
+            {"command": "ls", "directory": "/home/user", "timestamp": "2023-01-01"}
+        ]):
+            prompt = agent.create_prompt("list files in current directory")
+            
+            # Check that prompt contains essential components
+            assert "USER REQUEST: list files in current directory" in prompt
+            assert "You are Termora" in prompt
+            assert "SYSTEM_INFO" in prompt
+            assert "Command: ls" in prompt
+    
+    
 def test_create_prompt(agent):
     """Test that the prompt is created correctly with context."""
     prompt = agent.create_prompt("list files in current directory")
