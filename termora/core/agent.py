@@ -24,6 +24,7 @@ import requests
 from termora.core.context import TerminalContext
 from termora.core.history import HistoryManager
 from termora.utils.helpers import get_termora_dir
+from termora.utils.helpers import is_destructive_command
 
 class ActionPlan:
     """
@@ -144,7 +145,39 @@ class TermoraAgent:
         
         # Create history manager
         self.history_manager = HistoryManager()
+    
+    @staticmethod
+    def is_direct_command(input_text: str) -> bool:
+        """
+        Determine if input is likely a direct shell command rather than a natural language request.
         
+        Args:
+            input_text: The user input to analyze
+            
+        Returns:
+            bool: True if input appears to be a direct command
+        """
+        # Commands typically have these characteristics:
+        patterns = [
+            # Contains pipe character
+            '|' in input_text,
+            # Contains redirection
+            '>' in input_text or '<' in input_text,
+            # Contains semicolon or &&
+            ';' in input_text or '&&' in input_text,
+            # Starts with common command name
+            any(input_text.startswith(cmd) for cmd in [
+                'ls', 'cd', 'mkdir', 'rm', 'cp', 'mv', 'cat', 'echo',
+                'grep', 'find', 'git', 'python', 'pip', 'npm', 'ssh',
+                'curl', 'wget', 'sudo', 'apt', 'brew', 'open', 'touch'
+            ]),
+            # Contains flag pattern (-f, --flag)
+            bool(re.search(r'\s-[a-zA-Z]|\s--[a-zA-Z]', input_text))
+        ]
+        
+        # If any pattern matches, it's likely a direct command
+        return any(patterns)
+    
     def _set_api_key(self):
         """Set the appropriate API key based on the configured provider."""
         provider = self.config["ai_provider"].lower()
@@ -264,6 +297,21 @@ class TermoraAgent:
         Returns:
             An ActionPlan object
         """
+        # Check if this is a direct command using our static method
+        if self.is_direct_command(user_request):
+            # Create a simple action plan for direct command execution
+            return ActionPlan(
+                explanation=f"Executing direct command: {user_request}",
+                actions=[
+                    {
+                        "type": "shell_command",
+                        "content": user_request,
+                        "explanation": "Direct command execution"
+                    }
+                ],
+                requires_confirmation=is_destructive_command(user_request),
+                requires_backup=is_destructive_command(user_request)
+            )
         
         # Create the prompt
         prompt = self.create_prompt(user_request)
