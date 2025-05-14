@@ -49,7 +49,16 @@ class TermoraCLI:
         self.verbose = verbose
         self.console = Console(theme=termora_theme)
         self.context = TerminalContext()
-        self.agent = TermoraAgent(model_name=model)
+        
+        # Create agent config with the selected model
+        agent_config = {
+            "ai_provider": model,
+            "ai_model": "llama3-70b-8192" if model == "groq" else "gpt-4" if model == "openai" else "llama3",
+            "temperature": 0.7,
+            "max_tokens": 2000
+        }
+        self.agent = TermoraAgent(config=agent_config)
+        
         self.executor = CommandExecutor()
         self.rollback = RollbackManager()
         
@@ -244,7 +253,7 @@ def parse_args(args: List[str]) -> Dict[str, Any]:
     parser.add_argument(
         "--model", 
         choices=["openai", "groq", "ollama"],
-        default="openai",
+        default="groq",
         help="AI model to use"
     )
     parser.add_argument(
