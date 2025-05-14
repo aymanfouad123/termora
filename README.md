@@ -9,10 +9,11 @@ Termora is an intelligent AI-powered terminal assistant that remembers how you w
 
 ## Key Capabilities
 
-- **Agentic Intelligence**: Reasons dynamically about tasks, generating the optimal solution using commands or code
-- **Perfect Memory**: Remembers your entire command history with rich context and adapts to your patterns
-- **Intelligent Automation**: Creates and manages recurring workflows through natural language
-- **Enhanced Safety**: Provides automatic backups and rollback capabilities for terminal operations
+- **Agentic Intelligence**: Reasons dynamically about tasks, generating multi-step workflows
+- **Contextual Awareness**: Gathers information about directories, files, commands, and git status
+- **Perfect Memory**: Maintains history of commands and adapts to your patterns
+- **Intelligent Automation**: Creates and manages workflows through natural language
+- **Enhanced Safety**: Provides automatic backups and rollback capabilities
 
 ## Examples
 
@@ -58,14 +59,13 @@ Termora analyzes your request, shows you exactly what it will do, and executes a
 
 ## Features
 
-- **True Natural Language**: Communicate your intent conversationally with zero command syntax
-- **Dynamic Reasoning**: Generates shell commands or Python code based on what's needed for the task
-- **Perfect Command Memory**: Recalls and applies your past solutions in similar contexts
-- **Adaptable Execution**: Chooses the most efficient approach to solve any given task
-- **Intelligent Automation**: Creates recurring tasks that respond to time and system conditions
+- **True Natural Language**: Communicate your intent conversationally
+- **Dynamic Reasoning**: Generates shell commands or Python code based on your needs
+- **Perfect Command Memory**: Recalls your past solutions in similar contexts
+- **Task Planning**: Creates and executes multi-step workflows for complex goals
 - **Transparent Execution**: Shows you exactly what it will do before doing it
-- **Enhanced Safety**: Creates targeted backups and provides rollback capabilities for terminal operations
-- **AI Flexibility**: Works with OpenAI, Groq, Claude, or local Ollama models for privacy
+- **Enhanced Safety**: Creates targeted backups with rollback capabilities
+- **AI Flexibility**: Works with OpenAI, Groq, Claude, or local Ollama models
 - **Cross-platform**: Supports macOS and Linux
 
 ## Why Termora?
