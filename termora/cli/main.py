@@ -37,7 +37,7 @@ termora_theme = Theme({
 class TermoraCLI:
     """Main CLI interface for Termora."""
     
-    def __init__(self, model: str = "openai", verbose: bool = False):
+    def __init__(self, model: str = "groq", verbose: bool = False):
         """
         Initialize the Termora CLI.
         
@@ -145,7 +145,7 @@ class TermoraCLI:
                 transient=True
             ) as progress:
                 progress.add_task("", total=None)
-                context_data = self.context.gather()
+                context_data = self.context.get_context()
                 
             # 2. Generate action plan with the agent
             with Progress(

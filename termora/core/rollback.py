@@ -3,6 +3,15 @@ Rollback module for Termora.
 
 This module handles restoring from backups created during command execution,
 allowing users to undo potentially destructive operations.
+
+Key functionality:
+- RollbackManager: Main class for managing backup and rollback operations
+- record_execution: Stores information about executed commands
+- rollback_last: Restores files from the most recent backup
+- rollback_specific: Restores files from a specific backup ID
+- list_backups: Lists all available backups
+- display_backups: Shows available backups in a formatted table
+- _restore_from_backup: Extracts and restores files from a backup archive
 """
 
 import os

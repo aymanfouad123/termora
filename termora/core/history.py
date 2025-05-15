@@ -1,7 +1,18 @@
 """
 History management module for Termora.
 
-This module handles tracking, storing, and analyzing command history with rich context to enable Termora's temporal intelligence features.
+This module handles tracking, storing, and analyzing command history with rich context 
+to enable Termora's temporal intelligence features.
+
+Key functionality:
+- HistoryManager: Main class for tracking and analyzing command history
+- add_command: Records shell command executions with metadata
+- add_python_execution: Records Python code executions
+- add_action_plan: Records complete action plan executions
+- search_history: Finds relevant history entries based on criteria
+- get_command_patterns: Identifies patterns in command usage
+- _gather_command_context: Collects additional context about commands
+- _categorize_command: Determines the type/category of a command
 """
 
 import os

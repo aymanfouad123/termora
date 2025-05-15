@@ -4,6 +4,14 @@ Terminal context gathering module.
 This module collects information about the user's terminal environment,
 including current directory, recent commands, files, and git status.
 This context helps the AI agent make more informed decisions.
+
+Key functionality:
+- TerminalContext: Main class for gathering context information
+- get_context: Collects all context data into a dictionary
+- to_string: Formats context information for inclusion in AI prompts
+- get_directory_contents: Lists files in the current directory
+- get_command_history: Retrieves recent command history
+- get_git_status: Gets information about git repositories
 """
 
 import os

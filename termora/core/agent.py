@@ -4,6 +4,12 @@ AI Agent module for Termora.
 This module handles the core intelligence of Termora, managing the 
 interaction with AI models to process natural language requests and 
 generate executable action plans (using shell commands or Python code).
+
+Key functionality:
+- TermoraAgent: The main class that interacts with AI models
+- ActionPlan: A structured plan of actions to be executed
+- generate_plan: Creates an execution plan from natural language
+- process_request: Async version for creating execution plans
 """
 
 import os
@@ -286,6 +292,59 @@ class TermoraAgent:
             result.append("")  # Empty line for separation
             
         return "\n".join(result)
+    
+    def generate_plan(self, user_request: str, context_data: Optional[Dict[str, Any]] = None) -> ActionPlan:
+        """
+        Generate an action plan based on user request and context.
+        
+        Args:
+            user_request: The natural language request from the user
+            context_data: Terminal context information (optional)
+            
+        Returns:
+            An ActionPlan object
+        """
+        # Check if this is a direct command
+        if self.is_direct_command(user_request):
+            return ActionPlan(
+                explanation=f"Executing direct command: {user_request}",
+                actions=[
+                    {
+                        "type": "shell_command",
+                        "content": user_request,
+                        "explanation": "Direct command execution"
+                    }
+                ],
+                requires_confirmation=is_destructive_command(user_request),
+                requires_backup=is_destructive_command(user_request)
+            )
+        
+        # For async/await compatibility in sync context
+        import asyncio
+        try:
+            # Get event loop or create one
+            try:
+                loop = asyncio.get_event_loop()
+            except RuntimeError:
+                loop = asyncio.new_event_loop()
+                asyncio.set_event_loop(loop)
+                
+            # Process the request asynchronously
+            return loop.run_until_complete(self.process_request(user_request))
+        except Exception as e:
+            # Fallback for any errors
+            return ActionPlan(
+                explanation=f"Error processing request: {str(e)}",
+                actions=[
+                    {
+                        "type": "shell_command",
+                        "content": f"echo 'Error: {str(e)}'",
+                        "explanation": "Display error message"
+                    }
+                ],
+                requires_confirmation=False,
+                requires_backup=False
+            )
     
     async def process_request(self, user_request: str) -> ActionPlan:
         """
