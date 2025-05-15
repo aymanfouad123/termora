@@ -34,6 +34,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import List, Dict, Optional, Tuple, Any, Union
 import sys
+import time
 
 from rich.console import Console
 from rich.prompt import Confirm
@@ -351,3 +352,130 @@ class CommandExecutor:
                                 backup_paths.add(clean_path)
         
         return list(backup_paths)
+
+    def _execute_shell_command(self, command: str) -> Dict[str, Any]:
+        """
+        Execute a shell command and capture its output.
+        
+        Args:
+            command: The shell command to execute
+            
+        Returns:
+            Dictionary with execution results
+        """
+        start_time = time.time()
+        
+        try:
+            # Execute the command
+            process = subprocess.run(
+                command,
+                shell=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+                executable="/bin/bash"  # Ensure we use bash for consistency
+            )
+            
+            duration = time.time() - start_time
+            
+            # Format the output
+            output = process.stdout
+            error = process.stderr
+            exit_code = process.returncode
+            
+            # Display outputs
+            if output:
+                self.console.print(Panel(output, title="[green]Output[/green]", border_style="green"))
+            if error:
+                self.console.print(Panel(error, title="[red]Error[/red]", border_style="red"))
+                
+            # Create result
+            result = {
+                "action": {"type": "shell_command", "content": command},
+                "output": output,
+                "error": error,
+                "exit_code": exit_code,
+                "duration": duration,
+                "success": exit_code == 0
+            }
+            
+            return result
+            
+        except Exception as e:
+            duration = time.time() - start_time
+            self.console.print(f"[red]Error executing command: {str(e)}[/red]")
+            
+            return {
+                "action": {"type": "shell_command", "content": command},
+                "output": "",
+                "error": str(e),
+                "exit_code": 1,
+                "duration": duration,
+                "success": False
+            }
+
+    def _execute_python_code(self, code: str) -> Dict[str, Any]:
+        """
+        Execute Python code in a temporary file and capture output.
+        
+        Args:
+            code: Python code to execute
+            
+        Returns:
+            Dictionary with execution results
+        """
+        start_time = time.time()
+        
+        try:
+            # Create a temporary directory and file
+            with tempfile.TemporaryDirectory() as temp_dir:
+                script_path = Path(temp_dir) / "termora_script.py"
+                
+                # Write code to file
+                with open(script_path, "w") as f:
+                    f.write(code)
+                
+                # Execute the Python script
+                process = subprocess.run(
+                    [sys.executable, str(script_path)],
+                    capture_output=True,
+                    text=True
+                )
+                
+                duration = time.time() - start_time
+                
+                # Format the output
+                output = process.stdout
+                error = process.stderr
+                exit_code = process.returncode
+                
+                # Display outputs
+                if output:
+                    self.console.print(Panel(output, title="[green]Output[/green]", border_style="green"))
+                if error:
+                    self.console.print(Panel(error, title="[red]Error[/red]", border_style="red"))
+                    
+                # Create result
+                result = {
+                    "action": {"type": "python_code", "content": code},
+                    "output": output,
+                    "error": error,
+                    "exit_code": exit_code,
+                    "duration": duration,
+                    "success": exit_code == 0
+                }
+                
+                return result
+                
+        except Exception as e:
+            duration = time.time() - start_time
+            self.console.print(f"[red]Error executing Python code: {str(e)}[/red]")
+            
+            return {
+                "action": {"type": "python_code", "content": code},
+                "output": "",
+                "error": str(e),
+                "exit_code": 1,
+                "duration": duration,
+                "success": False
+            }

@@ -157,61 +157,16 @@ class TermoraCLI:
                 progress.add_task("", total=None)
                 action_plan = self.agent.generate_plan(user_input, context_data)
         
-            # 3. Show plan to user
-            self.console.print("\n[info]I'll help you with that. Here's my plan:[/info]")   
+            # 3. Execute the plan (the executor will display the plan and ask for confirmation)
+            self.console.print("\n[info]I'll help you with that.[/info]")   
             
-            # Display explanation
-            self.console.print(Panel(
-                action_plan.explanation,
-                title="[bold]Explanation[/bold]",
-                border_style="blue"
-            ))
+            result = self.executor.execute_plan(action_plan)
             
-            # Display actions
-            for i, action in enumerate(action_plan.actions, 1):
-                action_type = action.get("type", "shell_command")
-                content = action.get("content", "")
-                explanation = action.get("explanation", "")
-                
-                # Choose language for syntax highlighting
-                language = "bash" if action_type == "shell_command" else "python"
-                
-                # Set color based on action type
-                if action_type == "shell_command":
-                    action_style = "command"
-                    title_prefix = "Command"
-                else:
-                    action_style = "python"
-                    title_prefix = "Python Code"
-                
-                title = f"[{action_style}]{title_prefix} {i}/{len(action_plan.actions)}[/{action_style}]"
-                if explanation:
-                    title += f": {explanation}"
-                    
-                # Display formatted code
-                self.console.print(
-                    Panel(
-                        Syntax(content, language, theme="monokai", line_numbers=True),
-                        title=title,
-                        border_style=action_style
-                    )
-                )
-            
-            # 4. Ask for confirmation
-            if Confirm.ask("\nWould you like me to execute this plan?"):
-                # 5. Execute the plan
-                self.console.print("\n[info]Executing plan...[/info]")
-                
-                # Use the executor to run the plan (it handles both shell commands and Python code)
-                result = self.executor.execute_plan(action_plan)
-                
-                # Record execution history for potential rollback
-                if result.get("executed", False):
-                    self.console.print("\n[success]Plan completed successfully![/success]")
-                else:
-                    self.console.print("\n[warning]Plan execution was cancelled or failed.[/warning]")
+            # Record execution history for potential rollback
+            if result.get("executed", False):
+                self.console.print("\n[success]Plan completed successfully![/success]")
             else:
-                self.console.print("[warning]Plan cancelled.[/warning]")
+                self.console.print("\n[warning]Plan execution was cancelled or failed.[/warning]")
                 
         except Exception as e:
             self.console.print(f"[error]Error: {str(e)}[/error]")
