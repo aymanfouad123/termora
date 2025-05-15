@@ -163,6 +163,23 @@ class TermoraAgent:
         Returns:
             bool: True if input appears to be a direct command
         """
+        # Normalize input text
+        input_text = input_text.strip()
+        
+        # Skip if input has natural language indicators
+        nl_indicators = [
+            "find me", "show me", "search for", "list all", "can you", "please", 
+            "how many", "where are", "tell me", "what is", "how do", "help me",
+            "i want", "i need", "could you", "would you", "get me"
+        ]
+        
+        if any(indicator in input_text.lower() for indicator in nl_indicators):
+            return False
+            
+        # Skip if input is a question
+        if input_text.endswith("?"):
+            return False
+        
         # Commands typically have these characteristics:
         patterns = [
             # Contains pipe character
@@ -232,21 +249,26 @@ class TermoraAgent:
         3. Consider the OS and current environment when generating your solution.
         4. Always use safe approaches that won't cause data loss.
         5. For potentially destructive operations, identify paths that should be backed up.
+        6. For file operations, verify paths exist using 'test' commands when necessary.
+        7. When working with specified locations (e.g., Downloads, Desktop), ensure the paths are correctly resolved.
+        8. Always provide explanations of what your commands do and what output to expect.
+        9. Use common utilities like find, grep, awk, sed, etc. effectively for text and file operations.
+        10. When creating Python code, include all necessary imports and error handling.
 
         RESPONSE FORMAT:
         Return your response in the following JSON format:
         {{
-            "explanation": "A clear explanation of what your plan will do",
+            "explanation": "A clear explanation of what your plan will do and what the expected outcome is",
             "actions": [
                 {{
                     "type": "shell_command",
                     "content": "command to execute",
-                    "explanation": "what this command does"
+                    "explanation": "what this command does and what output to expect"
                 }},
                 {{
                     "type": "python_code",
                     "content": "Python code to execute",
-                    "explanation": "what this code does",
+                    "explanation": "what this code does and expected outcome",
                     "dependencies": ["package1", "package2"]
                 }}
             ],
@@ -257,6 +279,7 @@ class TermoraAgent:
         IMPORTANT: Your response must be valid JSON that can be parsed with json.loads().
         For Python code, be sure to include any necessary imports.
         If a task would be better accomplished with Python code than shell commands, don't hesitate to use Python.
+        Handle special characters in commands properly, especially those that need escaping in shell commands.
         """
         
         return prompt

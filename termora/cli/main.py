@@ -22,6 +22,7 @@ from termora.core.context import TerminalContext
 from termora.core.agent import TermoraAgent
 from termora.core.executor import CommandExecutor
 from termora.core.rollback import RollbackManager
+from termora.core.history import HistoryManager
 
 # Create custom theme
 termora_theme = Theme({
@@ -61,6 +62,7 @@ class TermoraCLI:
         
         self.executor = CommandExecutor()
         self.rollback = RollbackManager()
+        self.history_manager = HistoryManager()
         
         # Create and load command history
         self.history_file = self._get_history_file_path()
@@ -155,6 +157,11 @@ class TermoraCLI:
                 transient=True
             ) as progress:
                 progress.add_task("", total=None)
+                
+                # Pass context and recent command history to help with plan generation
+                command_history = self.history_manager.search_history(limit=10)
+                context_data["command_history"] = command_history
+                
                 action_plan = self.agent.generate_plan(user_input, context_data)
         
             # 3. Execute the plan (the executor will display the plan and ask for confirmation)
@@ -162,8 +169,15 @@ class TermoraCLI:
             
             result = self.executor.execute_plan(action_plan)
             
-            # Record execution history for potential rollback
+            # Record execution history for potential rollback and history tracking
             if result.get("executed", False):
+                # Record in rollback manager
+                self.rollback.save_execution_history(result)
+                
+                # Record in history manager
+                current_dir = os.getcwd()
+                self.history_manager.add_action_plan(action_plan, result, current_dir)
+                
                 self.console.print("\n[success]Plan completed successfully![/success]")
             else:
                 self.console.print("\n[warning]Plan execution was cancelled or failed.[/warning]")

@@ -366,14 +366,17 @@ class CommandExecutor:
         start_time = time.time()
         
         try:
-            # Execute the command
+            # Set ENV variable to disable history expansion for this command
+            env = os.environ.copy()
+            env["HISTCONTROL"] = "ignoreboth"
+            
+            # Execute the command using bash directly to avoid shell expansion issues
             process = subprocess.run(
-                command,
-                shell=True,
+                ["bash", "-c", command],
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
                 text=True,
-                executable="/bin/bash"  # Ensure we use bash for consistency
+                env=env
             )
             
             duration = time.time() - start_time
