@@ -215,17 +215,18 @@ class TermoraAgent:
         else:
             raise ValueError(f"Unsupported AI provider: {provider}")
     
-    def create_prompt(self, user_request: str) -> str:
+    def create_prompt(self, user_request: str, context_data: Optional[Dict[str, Any]] = None) -> str:
         """
-        Create a prompt for the AI model based on user request and context.
+        Create an enhanced prompt that encourages better reasoning and planning.
         
         Args:
-            user_request: The natural language request from the user
+            user_request: The user's request
+            context_data: Additional context data not available through standard context gathering
             
         Returns:
             A formatted prompt string
         """
-        
+            
         # Get system context as string
         context_str = self.context.to_string()
         
@@ -233,56 +234,108 @@ class TermoraAgent:
         relevant_history = self._get_relevant_history(user_request)
         history_str = self._format_history(relevant_history)
         
-        # Build the complete prompt
-        prompt = f"""You are Termora, an agentic AI terminal assistant that helps users accomplish tasks by generating the optimal solution.
+        # Add any additional context data passed explicitly
+        additional_context = ""
+        if context_data: 
+            # Format any search results or disambiguation info
+            if "search_results" in context_data: 
+                additional_context += "\nSEARCH RESULTS:\n"
+                for result in context_data["search_results"]:
+                    additional_context += f"- {result['name']} ({result['type']}, similarity: {result['similarity']:.2f})\n"
+            
+            # Add user confirmations if present
+            if "user_confirmation" in context_data:
+                additional_context += f"\nUSER CONFIRMATION: {context_data['user_confirmation']}\n"
+        
+        
+        prompt = f"""You are Termora, an intelligent terminal assistant that helps users accomplish tasks through careful reasoning.
 
         {context_str}
 
         RELEVANT HISTORY:
         {history_str}
+        
+        {additional_context}
 
         USER REQUEST: {user_request}
 
-        INSTRUCTIONS:
-        1. Analyze the request and determine the best approach to accomplish the task.
-        2. You can use shell commands, generate Python code, or a combination of both.
-        3. Consider the OS and current environment when generating your solution.
-        4. Always use safe approaches that won't cause data loss.
-        5. For potentially destructive operations, identify paths that should be backed up.
-        6. For file operations, verify paths exist using 'test' commands when necessary.
-        7. When working with specified locations (e.g., Downloads, Desktop), ensure the paths are correctly resolved.
-        8. Always provide explanations of what your commands do and what output to expect.
-        9. Use common utilities like find, grep, awk, sed, etc. effectively for text and file operations.
-        10. When creating Python code, include all necessary imports and error handling.
-
+        REASONING APPROACH:
+        When handling user requests, especially those involving files and directories:
+        
+        1. UNDERSTAND INTENT: Precisely identify what the user wants to accomplish.
+        
+        2. ANALYZE REQUIREMENTS: Determine what information and resources are needed.
+        
+        3. DISAMBIGUATION PLANNING:
+       - When file/directory names are ambiguous, plan how to resolve them
+       - Consider fuzzy matching for similar names
+       - If multiple matches exist, prepare to ask the user for clarification
+       - Plan searches starting from the current directory, expanding only if needed
+        
+        4. CONTEXTUAL UNDERSTANDING:
+        - For domain-specific terms (like "luts", "assets", etc.), infer likely meanings
+        - For file type references, determine potential formats/extensions
+        - Use the current context to make intelligent inferences
+        
+        5. INCREMENTAL APPROACH:
+        - If you need more information, specify what you need and how to get it
+        - When uncertain, plan confirmation steps with the user
+        - Use filesystem checks before operations (test -e, etc.)
+        
+        6. SAFETY:
+        - Always look for the least destructive way to accomplish the task
+        - Plan backups for risky operations
+        - Verify paths before destructive operations
+        
         RESPONSE FORMAT:
-        Return your response in the following JSON format:
+        Return your response as JSON:
         {{
-            "explanation": "A clear explanation of what your plan will do and what the expected outcome is",
+            "reasoning": "Your step-by-step reasoning process",
+            "needed_information": [
+                {{
+                    "type": "fuzzy_search",
+                    "explanation": "Why this search is needed",
+                    "params": {{ "directory": "/path", "pattern": "query", "depth": 1 }}
+                }},
+                {{
+                    "type": "file_extension_search",
+                    "explanation": "Why this search is needed",
+                    "params": {{ "directory": "/path", "extension": "ext", "recursive": true }}
+                }},
+                {{
+                "type": "system_search",
+                "explanation": "Why this search is needed",
+                "params": {{ "query": "search term", "locations": ["/path1", "/path2"] }}
+                }}
+            ],
+            "confirmation_needed": true/false,
+            "confirmation_question": "Question to ask the user",
+            "confirmation_options": ["y", "n", "other"],
+            "explanation": "A clear explanation of what your plan will do",
             "actions": [
                 {{
                     "type": "shell_command",
                     "content": "command to execute",
-                    "explanation": "what this command does and what output to expect"
+                    "explanation": "what this command does"
                 }},
                 {{
-                    "type": "python_code",
-                    "content": "Python code to execute",
-                    "explanation": "what this code does and expected outcome",
-                    "dependencies": ["package1", "package2"]
+                "type": "python_code",
+                "content": "Python code to execute",
+                "explanation": "what this code does",
+                "dependencies": ["package1", "package2"]
                 }}
             ],
             "requires_backup": boolean,
             "backup_paths": ["path1", "path2", ...]
         }}
 
-        IMPORTANT: Your response must be valid JSON that can be parsed with json.loads().
-        For Python code, be sure to include any necessary imports.
-        If a task would be better accomplished with Python code than shell commands, don't hesitate to use Python.
-        Handle special characters in commands properly, especially those that need escaping in shell commands.
+        Note that the "needed_information" and "confirmation_needed" fields allow for multi-stage planning. Only include these if you need more information before you can create a complete plan.
+
+        IMPORTANT: Your response must be valid JSON and include thorough reasoning.
         """
         
         return prompt
+
     
     def _get_relevant_history(self, user_request: str) -> List[Dict[str, Any]]:
         """

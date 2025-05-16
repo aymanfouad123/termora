@@ -16,6 +16,7 @@ from rich.theme import Theme
 from rich.prompt import Confirm
 from rich.markdown import Markdown
 from rich.syntax import Syntax
+from rich.text import Text
 from rich.progress import Progress, SpinnerColumn, TextColumn
 
 from termora.core.context import TerminalContext
@@ -193,7 +194,11 @@ class TermoraCLI:
         try:
             while True:
                 try:
-                    user_input = self.console.input("\n[cyan]>[/cyan] ")
+                    # Get current directory for the prompt
+                    current_dir = os.getcwd()
+                    # Create a more informative prompt showing the current directory
+                    prompt = f"\n[blue]Current Directory: {current_dir}[/blue]\n[cyan]>[/cyan] "
+                    user_input = self.console.input(prompt)
                     if user_input.strip():
                         self.process_input(user_input)
                 except KeyboardInterrupt:

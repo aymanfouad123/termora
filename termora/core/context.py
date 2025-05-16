@@ -52,15 +52,21 @@ class TerminalContext:
         Gather all context information from the terminal environment.
         
         Returns:
-            A dictionary containing context information
+            A dictionary containing context information with enhanced directory context
         """
+        current_dir = self.get_current_directory()
+        
         return {
             "os": self.os_name,
-            "cwd": self.get_current_directory(),
+            "cwd": current_dir,
+            "cwd_name": os.path.basename(current_dir),  # Add the directory name
+            "cwd_parent": os.path.dirname(current_dir),  # Add parent directory
             "files": self.get_directory_contents(),
             "history": self.get_command_history(),
             "git_status": self.get_git_status(),
-            "environment": self.get_environment_info()
+            "environment": self.get_environment_info(),
+            "is_root": current_dir == os.path.expanduser("~"),  # Add whether we're in home directory
+            "is_git_root": self._is_git_root(current_dir)  # Add whether we're in a git root
         }
     
     def get_current_directory(self) -> str:
@@ -277,6 +283,31 @@ class TerminalContext:
                 env_info[var] = value
                 
         return env_info
+    
+    def _is_git_root(self, directory: str) -> bool:
+        """
+        Check if the given directory is a git repository root.
+        
+        Args:
+            directory: Directory path to check
+            
+        Returns:
+            True if the directory is a git repository root, False otherwise
+        """
+        try:
+            result = subprocess.run(
+                ['git', 'rev-parse', '--show-toplevel'],
+                cwd=directory,
+                capture_output=True,
+                text=True,
+                check=False
+            )
+            if result.returncode == 0:
+                git_root = result.stdout.strip()
+                return os.path.samefile(directory, git_root)
+        except Exception:
+            pass
+        return False
     
     def to_string(self) -> str:
         """
