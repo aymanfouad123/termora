@@ -21,6 +21,7 @@ from typing import Dict, List, Optional, Tuple, Any, Union
 from pathlib import Path
 import re
 from dotenv import load_dotenv
+import asyncio
 
 # For AI model integration
 import litellm
@@ -45,7 +46,8 @@ class ActionPlan:
         actions: List[Dict[str, Any]],
         requires_confirmation: bool = True,
         requires_backup: bool = False,
-        backup_paths: Optional[List[str]] = None
+        backup_paths: Optional[List[str]] = None,
+        reasoning: Optional[str] = None
     ):
         """
         Initialize an action plan.
@@ -56,6 +58,7 @@ class ActionPlan:
             requires_confirmation: Whether user confirmation is needed
             requires_backup: Whether files should be backed up before execution
             backup_paths: Paths to back up if requires_backup is True
+            reasoning: Step-by-step reasoning process (optional)
         """
         
         self.explanation = explanation
@@ -63,6 +66,7 @@ class ActionPlan:
         self.requires_confirmation = requires_confirmation
         self.requires_backup = requires_backup
         self.backup_paths = backup_paths or []
+        self.reasoning = reasoning  
     
     @property
     def has_python_code(self) -> bool:
@@ -87,7 +91,8 @@ class ActionPlan:
             "actions": self.actions,
             "requires_confirmation": self.requires_confirmation,
             "requires_backup": self.requires_backup,
-            "backup_paths": self.backup_paths
+            "backup_paths": self.backup_paths,
+            "reasoning": self.reasoning
         }
     
     @classmethod
@@ -107,7 +112,8 @@ class ActionPlan:
             actions=data.get("actions", []),
             requires_confirmation=data.get("requires_confirmation", True),
             requires_backup=data.get("requires_backup", False),
-            backup_paths=data.get("backup_paths", [])
+            backup_paths=data.get("backup_paths", []),
+            reasoning=data.get("reasoning")
         )
 
 class TermoraAgent:
@@ -642,3 +648,27 @@ class TermoraAgent:
                 "error": str(e),
                 "return_code": 1
             }
+    
+    def get_raw_completion(self, prompt: str) -> str:
+        """
+        Get a raw completion from the AI without parsing into an action plan.
+        
+        Args:
+            prompt: The prompt to send to the AI
+            
+        Returns:
+            Raw AI response as string
+        """
+
+        try:
+            # Get event loop or create one
+            try:
+                loop = asyncio.get_event_loop()
+            except RuntimeError:
+                loop = asyncio.new_event_loop()
+                asyncio.set_event_loop(loop)
+                
+            # Call AI provider directly
+            return loop.run_until_complete(self._call_ai_provider(prompt))
+        except Exception as e:
+            return f"Error getting completion: {str(e)}"
