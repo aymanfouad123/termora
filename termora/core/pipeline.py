@@ -125,3 +125,104 @@ class TermoraPipeline:
         """
         # Keeping it simple for now, room to do more complex pre-processing in the future 
         return user_input.strip()
+    
+    def _extract_intent(self, user_input: str, context_data: Dict[str, Any]) -> tuple[Intent, str]:
+        """
+        Extract intent from user input through prompting.
+        
+        Args:
+            user_input: User's request
+            context_data: Current context
+            
+        Returns:
+            Tuple of (Intent object, reasoning string)
+        """
+        
+        # Use the agent with an intent extraction prompt
+        intent_extraction_prompt = self._create_intent_extraction_prompt(user_input, context_data)
+
+        # Get intent from AI
+        response = self.agent.get_raw_completion(intent_extraction_prompt)
+        
+        # Parse the response
+        intent_data = self._parse_intent_response(response)
+
+        # Create Intent object
+        intent = Intent(
+            action=intent_data.get("action", "unknown"),
+            target_dir=intent_data.get("target_dir"),
+            file_filter=intent_data.get("file_filter"),
+            time_filter=intent_data.get("time_filter"),
+            destination=intent_data.get("destination"),
+            limit=intent_data.get("limit"),
+            sort_by=intent_data.get("sort_by"),
+            recursive=intent_data.get("recursive", True)
+        )
+        
+        reasoning = intent_data.get("reasoning", "")
+    
+        return intent, reasoning
+    
+    def _create_intent_extraction_prompt(self, user_input: str, context_data: Dict[str, Any]) -> str:
+        """Create prompt for intent extraction."""
+        context_str = self.context_provider.to_string()
+        
+        prompt = f"""You are Termora, an intelligent terminal assistant.
+        
+        {context_str}
+        
+        USER REQUEST: {user_input}
+        
+        TASK:
+        Extract the intent and parameters from this user request.
+        
+        INSTRUCTIONS:
+        1. Identify the primary action (move, find, list, count, delete, etc.)
+        2. Extract all relevant parameters (paths, filters, options)
+        3. Map vague references to specific technical details
+        4. Provide step-by-step reasoning
+        
+        Return your analysis as JSON with this structure:
+        {{
+            "action": "primary_action",
+            "target_dir": "directory to operate on",
+            "file_filter": {{ filters for selecting files }},
+            "time_filter": {{ date/time constraints }},
+            "destination": "destination path if relevant",
+            "limit": number_of_results,
+            "sort_by": "sorting_criterion",
+            "recursive": true_or_false,
+            "reasoning": "Your step-by-step reasoning process"
+        }}
+        
+        For example, with "Move all screenshots from March into an archive folder":
+        {{
+            "action": "move",
+            "file_filter": {{ "name_pattern": "*screenshot*" }},
+            "time_filter": {{ "from": "2024-03-01", "to": "2024-04-01" }}, # If no year is mentioned for a time period then assume the user is assuming to use the current year
+            "destination": "~/archive",
+            "reasoning": "The user wants to move files..."
+        }}
+        
+        IMPORTANT: Your response must be valid JSON and include thorough reasoning.
+        """
+        
+        return prompt
+    
+    def _parse_intent_response(self, response: str) -> Dict[str, Any]:
+        """Parse the AI response to extract Intent data."""
+        import json
+        import re
+        
+        # Try to extract JSON from response
+        try:
+            # Look for JSON object in the response
+            match = re.search(r'({.*})', response, re.DOTALL)
+            if match:
+                json_str = match.group(1)
+                return json.loads(json_str)
+            else:
+                return {"action": "unknown", "reasoning": "Failed to parse intent from response"}
+        except Exception:
+            return {"action": "unknown", "reasoning": "Failed to parse intent from response"}
+
