@@ -23,6 +23,8 @@ from pathlib import Path
 import os
 import json
 
+from termora.core.agent import ActionPlan
+
 @dataclass
 class Intent:
     """Represents the extracted intent from user input."""
@@ -226,3 +228,128 @@ class TermoraPipeline:
         except Exception:
             return {"action": "unknown", "reasoning": "Failed to parse intent from response"}
 
+    def _generate_plan(self, intent: Intent, reasoning: str, user_input: str, context_data: Dict[str, Any]) -> TermoraPlan:
+        """
+        Generate execution plan based on intent.
+        
+        Args:
+            intent: Extracted intent object
+            reasoning: Reasoning behind the intent extraction
+            user_input: Original user input
+            context_data: Current context
+            
+        Returns:
+            TermoraPlan object
+        """
+        # Create plan generation prompt
+        plan_prompt = self._create_plan_generation_prompt(intent, reasoning, user_input, context_data)
+        
+        # Get plan from AI
+        response = self.agent.get_raw_completion(plan_prompt)
+        
+        # Parse the response
+        plan_data = self._parse_plan_response(response)
+        
+        # Create plan object
+        return TermoraPlan(
+            user_input=user_input,
+            intent=intent,
+            reasoning=reasoning,
+            plan=plan_data.get("plan", []),
+            preview=plan_data.get("preview", {}),
+            requires_backup=plan_data.get("requires_backup", False),
+            backup_paths=plan_data.get("backup_paths", [])
+        )
+
+    def _create_plan_generation_prompt(self, intent: Intent, reasoning: str, user_input: str, context_data: Dict[str, Any]) -> str:
+        """Create prompt for plan generation."""
+        context_str = self.context_provider.to_string()
+        intent_json = json.dumps(intent.to_dict(), indent=2)
+        
+        prompt = f"""You are Termora, an intelligent terminal assistant.
+        
+        {context_str}
+        
+        USER REQUEST: {user_input}
+        
+        EXTRACTED INTENT:
+        {intent_json}
+        
+        REASONING:
+        {reasoning}
+        
+        TASK:
+        Generate a specific, safe execution plan based on this intent.
+        
+        INSTRUCTIONS:
+        1. Design a sequence of shell commands to fulfill the intent
+        2. Ensure commands are safe and include error checking
+        3. Add proper path resolution for all referenced directories
+        4. For potentially dangerous operations, implement a safe alternative
+        5. For file deletion, use trash system instead of permanent deletion
+        
+        Return your plan as JSON with this structure:
+        {{
+            "plan": [
+                {{
+                    "type": "shell_command",
+                    "content": "command to execute",
+                    "explanation": "what this command does"
+                }},
+                // more actions...
+            ],
+            "preview": {{
+                "natural_language": "Human-readable explanation of plan",
+                "safety_notes": "Notes about safety precautions taken"
+            }},
+            "requires_backup": boolean,
+            "backup_paths": ["path1", "path2", ...]
+        }}
+        
+        IMPORTANT: Your response must be valid JSON with safe, properly escaped shell commands.
+        """
+        
+        return prompt
+    
+    def _parse_plan_response(self, response: str) -> Dict[str, Any]:
+        """Parse the AI response to extract plan data."""
+        import json
+        import re
+        
+        # Try to extract JSON from response
+        try:
+            # Look for JSON object in the response
+            match = re.search(r'({.*})', response, re.DOTALL)
+            if match:
+                json_str = match.group(1)
+                return json.loads(json_str)
+            else:
+                return {"plan": [], "preview": {"natural_language": "Failed to generate plan"}}
+        except Exception:
+            return {"plan": [], "preview": {"natural_language": "Failed to generate plan"}}
+        
+    def _convert_to_action_plan(self, plan: TermoraPlan) -> 'ActionPlan':
+        """
+        Convert TermoraPlan to ActionPlan for execution.
+        
+        Args:
+            plan: TermoraPlan object
+            
+        Returns:
+            ActionPlan object
+        """
+    
+        # Create explanation from preview
+        explanation = plan.preview.get("natural_language", "")
+        if "safety_notes" in plan.preview:
+            explanation += f"\n\n{plan.preview['safety_notes']}"
+        
+        # Convert to ActionPlan format
+        return ActionPlan(
+            explanation=explanation,
+            actions=plan.plan,
+            requires_confirmation=True,  # Always confirm
+            requires_backup=plan.requires_backup,
+            backup_paths=plan.backup_paths,
+            reasoning=plan.reasoning
+        )
