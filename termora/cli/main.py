@@ -18,12 +18,14 @@ from rich.markdown import Markdown
 from rich.syntax import Syntax
 from rich.text import Text
 from rich.progress import Progress, SpinnerColumn, TextColumn
+import traceback
 
 from termora.core.context import TerminalContext
 from termora.core.agent import TermoraAgent
 from termora.core.executor import CommandExecutor
 from termora.core.rollback import RollbackManager
 from termora.core.history import HistoryManager
+from termora.core.pipeline import TermoraPipeline
 
 # Create custom theme
 termora_theme = Theme({
@@ -65,6 +67,15 @@ class TermoraCLI:
         self.rollback = RollbackManager()
         self.history_manager = HistoryManager()
         
+        # Create pipeline
+        self.pipeline = TermoraPipeline(
+            agent=self.agent,
+            executor=self.executor,
+            context_provider=self.context,
+            history_manager=self.history_manager,
+            rollback_manager=self.rollback
+        )
+    
         # Create and load command history
         self.history_file = self._get_history_file_path()
         self.command_history = self._load_command_history()
@@ -124,7 +135,7 @@ class TermoraCLI:
     
     def process_input(self, user_input: str) -> None:
         """
-        Process a single user input.
+        Process a single user input using the pipeline.
         
         Args:
             user_input: Natural language input from user
@@ -140,45 +151,21 @@ class TermoraCLI:
             self.command_history.append(user_input)
             self._save_command_history()
             
-            # 1. Gather context - provides terminal environment info
+            # Process through pipeline
+            self.console.print("\n[info]I'll help you with that.[/info]")
+            
+            # Use pipeline to process the request
             with Progress(
                 SpinnerColumn(),
-                TextColumn("[info]Gathering context...[/info]"),
+                TextColumn("[info]Processing your request...[/info]"),
                 console=self.console,
                 transient=True
             ) as progress:
                 progress.add_task("", total=None)
-                context_data = self.context.get_context()
-                
-            # 2. Generate action plan with the agent
-            with Progress(
-                SpinnerColumn(),
-                TextColumn("[info]Thinking...[/info]"),
-                console=self.console,
-                transient=True
-            ) as progress:
-                progress.add_task("", total=None)
-                
-                # Pass context and recent command history to help with plan generation
-                command_history = self.history_manager.search_history(limit=10)
-                context_data["command_history"] = command_history
-                
-                action_plan = self.agent.generate_plan(user_input, context_data)
-        
-            # 3. Execute the plan (the executor will display the plan and ask for confirmation)
-            self.console.print("\n[info]I'll help you with that.[/info]")   
+                result = self.pipeline.process(user_input)
             
-            result = self.executor.execute_plan(action_plan)
-            
-            # Record execution history for potential rollback and history tracking
+            # Check result and provide feedback
             if result.get("executed", False):
-                # Record in rollback manager
-                self.rollback.save_execution_history(result)
-                
-                # Record in history manager
-                current_dir = os.getcwd()
-                self.history_manager.add_action_plan(action_plan, result, current_dir)
-                
                 self.console.print("\n[success]Plan completed successfully![/success]")
             else:
                 self.console.print("\n[warning]Plan execution was cancelled or failed.[/warning]")
@@ -186,7 +173,6 @@ class TermoraCLI:
         except Exception as e:
             self.console.print(f"[error]Error: {str(e)}[/error]")
             if self.verbose:
-                import traceback
                 self.console.print(Panel(traceback.format_exc(), title="Detailed Error", border_style="red"))
     
     def start_repl(self) -> None:
