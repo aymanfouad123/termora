@@ -155,25 +155,99 @@ class TermoraCLI:
             self.console.print("\n[info]I'll help you with that.[/info]")
             
             # Use pipeline to process the request
-            with Progress(
-                SpinnerColumn(),
-                TextColumn("[info]Processing your request...[/info]"),
-                console=self.console,
-                transient=True
-            ) as progress:
-                progress.add_task("", total=None)
-                result = self.pipeline.process(user_input)
-            
-            # Check result and provide feedback
-            if result.get("executed", False):
-                self.console.print("\n[success]Plan completed successfully![/success]")
-            else:
-                self.console.print("\n[warning]Plan execution was cancelled or failed.[/warning]")
+            try:
+                # Split the pipeline process into phases: pre-execution and execution
+                
+                # Phase 1: Generate plan (show spinner)
+                with Progress(
+                    SpinnerColumn(),
+                    TextColumn("[info]Processing your request...[/info]"),
+                    console=self.console,
+                    transient=True
+                ) as progress:
+                    task = progress.add_task("", total=None)
+                    # Only run the planning phase with the spinner
+                    plan = self._generate_plan(user_input)
+                    
+                # Phase 2: Execute plan (without spinner, allowing for user confirmation)
+                result = self._execute_plan(plan)
+                    
+                # Check result and provide accurate feedback
+                if result.get("executed", False):
+                    # Get success statistics
+                    success_count = sum(1 for output in result.get("outputs", []) if output.get("success", False))
+                    total_count = len(result.get("actions", []))
+                    
+                    if success_count == total_count:
+                        self.console.print("\n[success]All operations completed successfully![/success]")
+                    elif success_count > 0:
+                        self.console.print(f"\n[warning]Partial success: {success_count}/{total_count} operations completed.[/warning]")
+                    else:
+                        self.console.print("\n[error]Operations failed. Please check the error messages above.[/error]")
+                else:
+                    reason = result.get("reason", "Unknown reason")
+                    self.console.print(f"\n[warning]Plan execution was cancelled or failed: {reason}[/warning]")
+                    
+                    # If there are error details, show them in verbose mode
+                    if self.verbose and "error_details" in result:
+                        self.console.print(Panel(result["error_details"], title="Error Details", border_style="red"))
+                        
+            except Exception as pipeline_error:
+                self.console.print(f"[error]Pipeline error: {str(pipeline_error)}[/error]")
+                if self.verbose:
+                    self.console.print(Panel(traceback.format_exc(), title="Pipeline Error", border_style="red"))
                 
         except Exception as e:
-            self.console.print(f"[error]Error: {str(e)}[/error]")
+            self.console.print(f"[error]Critical error: {str(e)}[/error]")
             if self.verbose:
-                self.console.print(Panel(traceback.format_exc(), title="Detailed Error", border_style="red"))
+                self.console.print(Panel(traceback.format_exc(), title="Critical Error", border_style="red"))
+    
+    def _generate_plan(self, user_input: str):
+        """
+        Generate a plan without executing it.
+        
+        This extracts the planning phase from the pipeline to run with a spinner.
+        
+        Args:
+            user_input: User's request
+            
+        Returns:
+            Generated plan
+        """
+        # Get context
+        context_data = self.context.get_context()
+        context_data["command_history"] = self.history_manager.search_history(limit=10)
+        
+        # Extract intent
+        intent, reasoning = self.pipeline._extract_intent(user_input, context_data)
+        
+        # Generate plan
+        plan = self.pipeline._generate_plan(intent, reasoning, user_input, context_data)
+        
+        # Convert to ActionPlan
+        action_plan = self.pipeline._convert_to_action_plan(plan)
+        
+        return action_plan
+    
+    def _execute_plan(self, plan):
+        """
+        Execute a plan allowing for user confirmation.
+        
+        Args:
+            plan: The ActionPlan to execute
+            
+        Returns:
+            Execution results
+        """
+        # Execute plan (this will ask for confirmation without a spinner blocking the input)
+        result = self.executor.execute_plan(plan)
+        
+        # Log history if executed
+        if result.get("executed", False):
+            self.rollback.save_execution_history(result)
+            self.history_manager.add_action_plan(plan, result, os.getcwd())
+        
+        return result
     
     def start_repl(self) -> None:
         """Start the Read-Eval-Print Loop."""

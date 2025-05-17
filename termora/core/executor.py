@@ -227,7 +227,7 @@ class CommandExecutor:
             return {
                 "executed": False,
                 "reason": "User cancelled",
-                "commands": plan.commands,
+                "actions": plan.actions,
                 "outputs": [],
                 "backup_path": None
             }
@@ -261,10 +261,12 @@ class CommandExecutor:
          # Execute commands
         self.console.print("\n[bold blue] Executing actions...[/bold blue]")
         outputs = []
+        success_count = 0
         
         for i, action in enumerate(plan.actions, 1):
             action_type = action.get("type", "shell_command")
             content = action.get("content", "")
+            fallback = action.get("fallback", None)  # Get fallback command if available
             
             self.console.print(f"\n[bold]Running {action_type.replace('_', ' ')} {i}/{len(plan.actions)}:[/bold]")
             language = "bash" if action_type == "shell_command" else "python"
@@ -272,8 +274,8 @@ class CommandExecutor:
             
             try:
                 if action_type == "shell_command":
-                    # Execute shell command
-                    output = self._execute_shell_command(content)
+                    # Execute shell command with fallback if available
+                    output = self._execute_shell_command(content, fallback)
                 elif action_type == "python_code":
                     # Execute Python code
                     output = self._execute_python_code(content)
@@ -281,6 +283,8 @@ class CommandExecutor:
                     raise ValueError(f"Unknown action type: {action_type}")
                 
                 outputs.append(output)
+                if output.get("success", False):
+                    success_count += 1
             except Exception as e:
                 self.console.print(f"[bold red]Error executing {action_type}: {str(e)}[/bold red]")
                 outputs.append({
@@ -301,7 +305,6 @@ class CommandExecutor:
         self.last_execution = execution_info
         
         # Final summary
-        success_count = sum(1 for output in outputs if output.get("success", False))
         total_count = len(plan.actions)
         
         if success_count == total_count:
@@ -311,6 +314,12 @@ class CommandExecutor:
             if backup_path:
                 self.console.print(f"[blue]A backup was created at: {backup_path}[/blue]")
                 self.console.print("[blue]You can restore it with 'termora rollback last'[/blue]")
+        
+        # Only mark as executed if at least one command succeeded
+        execution_info["executed"] = success_count > 0
+        # Add a reason if none of the commands succeeded
+        if success_count == 0:
+            execution_info["reason"] = "All commands failed to execute"
         
         return execution_info
     
@@ -353,68 +362,114 @@ class CommandExecutor:
         
         return list(backup_paths)
 
-    def _execute_shell_command(self, command: str) -> Dict[str, Any]:
+    def _execute_shell_command(self, command: str, fallback: str = None) -> Dict[str, Any]:
         """
-        Execute a shell command and capture its output.
+        Execute a shell command and return the result.
         
         Args:
-            command: The shell command to execute
+            command: The command to execute
+            fallback: Optional fallback command to run if the primary fails
             
         Returns:
-            Dictionary with execution results
+            Dictionary with execution result
         """
-        start_time = time.time()
+        import subprocess
+        import os
+        
+        # Store start time
+        start_time = get_timestamp()
+        
+        # Execute command
+        self.console.print(f"\n[blue]$ {command}[/blue]")
         
         try:
-            # Set ENV variable to disable history expansion for this command
-            env = os.environ.copy()
-            env["HISTCONTROL"] = "ignoreboth"
-            
-            # Execute the command using bash directly to avoid shell expansion issues
+            # Execute the command in a bash shell
             process = subprocess.run(
-                ["bash", "-c", command],
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
+                command,
+                shell=True,
+                capture_output=True,
                 text=True,
-                env=env
+                executable="/bin/bash" if os.name != "nt" else None
             )
             
-            duration = time.time() - start_time
+            # Get output and status
+            stdout = process.stdout.strip()
+            stderr = process.stderr.strip()
+            success = process.returncode == 0
             
-            # Format the output
-            output = process.stdout
-            error = process.stderr
-            exit_code = process.returncode
+            # Display output or error
+            if success and stdout:
+                self.console.print(Panel(stdout, title="Output", border_style="green"))
+            if stderr:
+                self.console.print(Panel(stderr, title="Error", border_style="red"))
             
-            # Display outputs
-            if output:
-                self.console.print(Panel(output, title="[green]Output[/green]", border_style="green"))
-            if error:
-                self.console.print(Panel(error, title="[red]Error[/red]", border_style="red"))
+            # If command failed but we have a fallback, try that
+            if not success and fallback:
+                self.console.print(f"[yellow]Command failed. Trying fallback command...[/yellow]")
+                self.console.print(f"[blue]$ {fallback}[/blue]")
                 
-            # Create result
-            result = {
-                "action": {"type": "shell_command", "content": command},
-                "output": output,
-                "error": error,
-                "exit_code": exit_code,
-                "duration": duration,
-                "success": exit_code == 0
+                fallback_process = subprocess.run(
+                    fallback,
+                    shell=True,
+                    capture_output=True,
+                    text=True,
+                    executable="/bin/bash" if os.name != "nt" else None
+                )
+                
+                fallback_stdout = fallback_process.stdout.strip()
+                fallback_stderr = fallback_process.stderr.strip()
+                fallback_success = fallback_process.returncode == 0
+                
+                if fallback_success and fallback_stdout:
+                    self.console.print(Panel(fallback_stdout, title="Fallback Output", border_style="green"))
+                if fallback_stderr:
+                    self.console.print(Panel(fallback_stderr, title="Fallback Error", border_style="red"))
+                
+                # Use fallback results if main command failed
+                if fallback_success:
+                    stdout = fallback_stdout
+                    stderr = fallback_stderr
+                    success = True
+            
+            if not success:
+                self.console.print("[bold red]Command execution failed.[/bold red]")
+            
+            # Return result
+            return {
+                "action": {
+                    "type": "shell_command",
+                    "content": command
+                },
+                "output": stdout,
+                "error": stderr,
+                "success": success,
+                "start_time": start_time,
+                "end_time": get_timestamp()
             }
             
-            return result
-            
         except Exception as e:
-            duration = time.time() - start_time
-            self.console.print(f"[red]Error executing command: {str(e)}[/red]")
+            # Handle execution error
+            self.console.print(f"[bold red]Error executing command: {str(e)}[/bold red]")
             
+            # Try fallback if available
+            if fallback:
+                self.console.print(f"[yellow]Command failed. Trying fallback command...[/yellow]")
+                try:
+                    return self._execute_shell_command(fallback)  # Use the same method for the fallback
+                except Exception as fallback_e:
+                    self.console.print(f"[bold red]Fallback command also failed: {str(fallback_e)}[/bold red]")
+            
+            # Return error result
             return {
-                "action": {"type": "shell_command", "content": command},
+                "action": {
+                    "type": "shell_command",
+                    "content": command
+                },
                 "output": "",
                 "error": str(e),
-                "exit_code": 1,
-                "duration": duration,
-                "success": False
+                "success": False,
+                "start_time": start_time,
+                "end_time": get_timestamp()
             }
 
     def _execute_python_code(self, code: str) -> Dict[str, Any]:

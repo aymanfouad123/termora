@@ -88,32 +88,67 @@ class TermoraPipeline:
         Returns:
             Execution results
         """
-        
-        # 1. Parse input 
-        parsed_input = self._parse_input(user_input)
-        
-        # 2. Gather context
-        context_data = self.context_provider.get_context()
-        context_data["command_history"] = self.history_manager.search_history(limit=10)
-        
-        # 3. Extract intent via AI model
-        intent, reasoning = self._extract_intent(parsed_input, context_data)
-        
-        # 4. Generate plan
-        plan = self._generate_plan(intent, reasoning, parsed_input, context_data)
-        
-        # 5. Convert to generated plan to ActionPlan for execution
-        action_plan = self._convert_to_action_plan(plan)
-        
-        # 6. Execute (with safety preview and confirmation)
-        result = self.executor.execute_plan(action_plan)
-        
-        # 7. Log history and return result
-        if result.get("executed", False):
-            self.rollback_manager.save_execution_history(result)
-            self.history_manager.add_action_plan(action_plan, result, os.getcwd())
-        
-        return result
+        try:
+            print("Pipeline: Starting to process input")
+            # 1. Parse input 
+            parsed_input = self._parse_input(user_input)
+            print(f"Pipeline: Parsed input: {parsed_input[:30]}...")
+            
+            # 2. Gather context
+            print("Pipeline: Gathering context")
+            context_data = self.context_provider.get_context()
+            context_data["command_history"] = self.history_manager.search_history(limit=10)
+            print("Pipeline: Context gathered successfully")
+            
+            # 3. Extract intent via AI model
+            print("Pipeline: Extracting intent")
+            try:
+                intent, reasoning = self._extract_intent(parsed_input, context_data)
+                print(f"Pipeline: Intent extracted: {intent.action}")
+            except Exception as e:
+                print(f"Pipeline: Intent extraction error: {str(e)}")
+                raise Exception(f"Failed to extract intent: {str(e)}") from e
+            
+            # 4. Generate plan
+            print("Pipeline: Generating plan")
+            try:
+                plan = self._generate_plan(intent, reasoning, parsed_input, context_data)
+                print(f"Pipeline: Plan generated with {len(plan.plan)} actions")
+            except Exception as e:
+                print(f"Pipeline: Plan generation error: {str(e)}")
+                raise Exception(f"Failed to generate plan: {str(e)}") from e
+            
+            # 5. Convert to generated plan to ActionPlan for execution
+            print("Pipeline: Converting to ActionPlan")
+            try:
+                action_plan = self._convert_to_action_plan(plan)
+                print("Pipeline: Converted to ActionPlan successfully")
+            except Exception as e:
+                print(f"Pipeline: ActionPlan conversion error: {str(e)}")
+                raise Exception(f"Failed to convert plan: {str(e)}") from e
+            
+            # 6. Execute (with safety preview and confirmation)
+            print("Pipeline: Executing plan")
+            result = self.executor.execute_plan(action_plan)
+            print(f"Pipeline: Execution complete, success: {result.get('executed', False)}")
+            
+            # 7. Log history and return result
+            if result.get("executed", False):
+                print("Pipeline: Saving execution history")
+                self.rollback_manager.save_execution_history(result)
+                self.history_manager.add_action_plan(action_plan, result, os.getcwd())
+            
+            return result
+        except Exception as e:
+            print(f"Pipeline: Critical error in pipeline: {str(e)}")
+            import traceback
+            print(traceback.format_exc())
+            # Return a minimal result that won't cause further errors
+            return {
+                "executed": False,
+                "reason": f"Pipeline error: {str(e)}",
+                "error_details": traceback.format_exc()
+            }
     
     def _parse_input(self, user_input: str) -> str:
         """
@@ -266,6 +301,28 @@ class TermoraPipeline:
         context_str = self.context_provider.to_string()
         intent_json = json.dumps(intent.to_dict(), indent=2)
         
+        # Detect OS for command compatibility
+        import platform
+        os_name = platform.system()
+        os_version = platform.release()
+        
+        os_specific_guidance = ""
+        if os_name == "Darwin":  # macOS
+            os_specific_guidance = """
+            IMPORTANT: You're generating commands for macOS which uses BSD versions of utilities:
+            1. macOS 'find' doesn't support -printf, use -exec or pipe to another command instead
+            2. Some GNU-style parameters may not work; use BSD variants
+            3. For complex file operations, consider using 'stat', 'ls -la', or other macOS compatible commands
+            """
+        elif os_name == "Linux":
+            os_specific_guidance = """
+            You're generating commands for Linux which typically uses GNU utilities.
+            """
+        elif os_name == "Windows":
+            os_specific_guidance = """
+            IMPORTANT: You're generating commands for Windows. Use PowerShell commands when possible as they are more consistent.
+            """
+        
         prompt = f"""You are Termora, an intelligent terminal assistant.
         
         {context_str}
@@ -278,15 +335,24 @@ class TermoraPipeline:
         REASONING:
         {reasoning}
         
+        OPERATING SYSTEM INFORMATION:
+        OS: {os_name}
+        Version: {os_version}
+        {os_specific_guidance}
+        
         TASK:
         Generate a specific, safe execution plan based on this intent.
         
         INSTRUCTIONS:
         1. Design a sequence of shell commands to fulfill the intent
-        2. Ensure commands are safe and include error checking
-        3. Add proper path resolution for all referenced directories
-        4. For potentially dangerous operations, implement a safe alternative
-        5. For file deletion, use trash system instead of permanent deletion
+        2. Ensure commands are compatible with the user's OS ({os_name})
+        3. VALIDATE: Double check syntax - NO unmatched quotes, parentheses, or syntax errors
+        4. Ensure commands are safe and include error checking
+        5. Add proper path resolution for all referenced directories
+        6. For potentially dangerous operations, implement a safe alternative
+        7. For file deletion, use trash system instead of permanent deletion
+        8. Use conditional execution (command && next_command) for commands that depend on each other
+        9. If a command fails, provide a fallback command using '||'
         
         Return your plan as JSON with this structure:
         {{
@@ -294,7 +360,8 @@ class TermoraPipeline:
                 {{
                     "type": "shell_command",
                     "content": "command to execute",
-                    "explanation": "what this command does"
+                    "explanation": "what this command does",
+                    "fallback": "alternative command if this fails"
                 }},
                 // more actions...
             ],
