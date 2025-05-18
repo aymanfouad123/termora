@@ -6,25 +6,13 @@ import os
 import sys
 import argparse
 from typing import Optional, List, Dict, Any
-import json
-import readline  # For command history in terminal
-from pathlib import Path
-
 from rich.console import Console
 from rich.panel import Panel
 from rich.theme import Theme
-from rich.prompt import Confirm
 from rich.markdown import Markdown
-from rich.syntax import Syntax
-from rich.text import Text
 from rich.progress import Progress, SpinnerColumn, TextColumn
 import traceback
 
-from termora.core.context import TerminalContext
-from termora.core.agent import TermoraAgent
-from termora.core.executor import CommandExecutor
-from termora.core.rollback import RollbackManager
-from termora.core.history import HistoryManager
 from termora.core.pipeline import TermoraPipeline
 
 # Create custom theme
@@ -49,72 +37,19 @@ class TermoraCLI:
             model: AI model to use ("openai", "groq", or "ollama")
             verbose: Whether to show verbose output
         """
-        
         self.verbose = verbose
         self.console = Console(theme=termora_theme)
-        self.context = TerminalContext()
         
-        # Create agent config with the selected model
+        # Initialize pipeline with model configuration
         agent_config = {
             "ai_provider": model,
             "ai_model": "llama3-70b-8192" if model == "groq" else "gpt-4" if model == "openai" else "llama3",
             "temperature": 0.7,
             "max_tokens": 2000
         }
-        self.agent = TermoraAgent(config=agent_config)
-        
-        self.executor = CommandExecutor()
-        self.rollback = RollbackManager()
-        self.history_manager = HistoryManager()
-        
-        # Create pipeline
-        self.pipeline = TermoraPipeline(
-            agent=self.agent,
-            executor=self.executor,
-            context_provider=self.context,
-            history_manager=self.history_manager,
-            rollback_manager=self.rollback
-        )
-    
-        # Create and load command history
-        self.history_file = self._get_history_file_path()
-        self.command_history = self._load_command_history()
-        
+        self.pipeline = TermoraPipeline.from_config(agent_config)
         self._display_welcome()
-        
-    def _get_history_file_path(self) -> Path:
-        """Get the path to the command history file."""
-        # Create ~/.termora directory if it doesn't exist
-        termora_dir = Path.home() / ".termora"
-        termora_dir.mkdir(exist_ok=True)
-        
-        # Return path to history file
-        return termora_dir / "command_history.json"
-    
-    def _load_command_history(self) -> List[str]:
-        """Load command history from file."""
-        if not self.history_file.exists():
-            return []
-            
-        try:
-            with open(self.history_file, 'r') as f:
-                return json.load(f)
-        except (json.JSONDecodeError, IOError):
-            # If there's an error reading the file, start with empty history
-            return []
-    
-    def _save_command_history(self) -> None:
-        """Save command history to file."""
-        try:
-            # Keep only the latest 1000 commands
-            history_to_save = self.command_history[-1000:] if len(self.command_history) > 1000 else self.command_history
-            
-            with open(self.history_file, 'w') as f:
-                json.dump(history_to_save, f)
-        except IOError as e:
-            if self.verbose:
-                self.console.print(f"[warning]Could not save command history: {str(e)}[/warning]")
-    
+
     def _display_welcome(self) -> None:
         """Display the welcome message."""
         welcome_text = """
@@ -136,119 +71,35 @@ class TermoraCLI:
     def process_input(self, user_input: str) -> None:
         """
         Process a single user input using the pipeline.
-        
-        Args:
-            user_input: Natural language input from user
+        Only handles user interaction and display; all business logic is in the pipeline.
         """
         if user_input.lower() in ['exit', 'quit']:
-            # Save history before exiting
-            self._save_command_history()
             self.console.print("[success]Goodbye![/success]")
             sys.exit(0)
             
         try:
-            # Add to command history and save
-            self.command_history.append(user_input)
-            self._save_command_history()
-            
-            # Process through pipeline
             self.console.print("\n[info]I'll help you with that.[/info]")
-            
-            # Use pipeline to process the request
-            try:
-                # Split the pipeline process into phases: pre-execution and execution
+            with Progress(
+                SpinnerColumn(),
+                TextColumn("[info]Processing your request...[/info]"),
+                console=self.console,
+                transient=True
+            ) as progress:
+                task = progress.add_task("", total=None)
+                result = self.pipeline.process(user_input)
                 
-                # Phase 1: Generate plan (show spinner)
-                with Progress(
-                    SpinnerColumn(),
-                    TextColumn("[info]Processing your request...[/info]"),
-                    console=self.console,
-                    transient=True
-                ) as progress:
-                    task = progress.add_task("", total=None)
-                    # Only run the planning phase with the spinner
-                    plan = self._generate_plan(user_input)
-                    
-                # Phase 2: Execute plan (without spinner, allowing for user confirmation)
-                result = self._execute_plan(plan)
-                    
-                # Check result and provide accurate feedback
-                if result.get("executed", False):
-                    # Get success statistics
-                    success_count = sum(1 for output in result.get("outputs", []) if output.get("success", False))
-                    total_count = len(result.get("actions", []))
-                    
-                    if success_count == total_count:
-                        self.console.print("\n[success]All operations completed successfully![/success]")
-                    elif success_count > 0:
-                        self.console.print(f"\n[warning]Partial success: {success_count}/{total_count} operations completed.[/warning]")
-                    else:
-                        self.console.print("\n[error]Operations failed. Please check the error messages above.[/error]")
-                else:
-                    reason = result.get("reason", "Unknown reason")
-                    self.console.print(f"\n[warning]Plan execution was cancelled or failed: {reason}[/warning]")
-                    
-                    # If there are error details, show them in verbose mode
-                    if self.verbose and "error_details" in result:
-                        self.console.print(Panel(result["error_details"], title="Error Details", border_style="red"))
-                        
-            except Exception as pipeline_error:
-                self.console.print(f"[error]Pipeline error: {str(pipeline_error)}[/error]")
-                if self.verbose:
-                    self.console.print(Panel(traceback.format_exc(), title="Pipeline Error", border_style="red"))
-                
+            if result.get("executed", False):
+                self.console.print("\n[success]All operations completed successfully![/success]")
+            else:
+                reason = result.get("reason", "Unknown reason")
+                self.console.print(f"\n[warning]Plan execution was cancelled or failed: {reason}[/warning]")
+                if self.verbose and "error_details" in result:
+                    self.console.print(Panel(result["error_details"], title="Error Details", border_style="red"))
         except Exception as e:
             self.console.print(f"[error]Critical error: {str(e)}[/error]")
             if self.verbose:
                 self.console.print(Panel(traceback.format_exc(), title="Critical Error", border_style="red"))
-    
-    def _generate_plan(self, user_input: str):
-        """
-        Generate a plan without executing it.
-        
-        This extracts the planning phase from the pipeline to run with a spinner.
-        
-        Args:
-            user_input: User's request
-            
-        Returns:
-            Generated plan
-        """
-        # Get context
-        context_data = self.context.get_context()
-        context_data["command_history"] = self.history_manager.search_history(limit=10)
-        
-        # Extract intent
-        intent, reasoning = self.pipeline._extract_intent(user_input, context_data)
-        
-        # Generate plan
-        plan = self.pipeline._generate_plan(intent, reasoning, user_input, context_data)
-        
-        # Convert to ActionPlan
-        action_plan = self.pipeline._convert_to_action_plan(plan)
-        
-        return action_plan
-    
-    def _execute_plan(self, plan):
-        """
-        Execute a plan allowing for user confirmation.
-        
-        Args:
-            plan: The ActionPlan to execute
-            
-        Returns:
-            Execution results
-        """
-        # Execute plan (this will ask for confirmation without a spinner blocking the input)
-        result = self.executor.execute_plan(plan)
-        
-        # Log history if executed
-        if result.get("executed", False):
-            self.rollback.save_execution_history(result)
-            self.history_manager.add_action_plan(plan, result, os.getcwd())
-        
-        return result
-    
+
     def start_repl(self) -> None:
         """Start the Read-Eval-Print Loop."""
         try:
@@ -264,14 +115,11 @@ class TermoraCLI:
                 except KeyboardInterrupt:
                     self.console.print("\n[warning]Interrupted. Type 'exit' to quit.[/warning]")
                 except EOFError:
-                    # Save history before exiting
-                    self._save_command_history()
                     self.console.print("\n[success]Goodbye![/success]")
                     break
         finally:
-            # Final history save on exit
-            self._save_command_history()
-
+            # Let pipeline handle any cleanup
+            self.pipeline.cleanup()
 
 def parse_args(args: List[str]) -> Dict[str, Any]:
     """
@@ -298,13 +146,11 @@ def parse_args(args: List[str]) -> Dict[str, Any]:
     
     return vars(parser.parse_args(args))
 
-
 def main() -> None:
     """Main entry point for the CLI."""
     args = parse_args(sys.argv[1:])
     cli = TermoraCLI(model=args["model"], verbose=args["verbose"])
     cli.start_repl()
-
 
 if __name__ == "__main__":
     main()
