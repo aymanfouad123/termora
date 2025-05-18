@@ -6,13 +6,9 @@ to enable Termora's temporal intelligence features.
 
 Key functionality:
 - HistoryManager: Main class for tracking and analyzing command history
-- add_command: Records shell command executions with metadata
-- add_python_execution: Records Python code executions
-- add_action_plan: Records complete action plan executions
-- search_history: Finds relevant history entries based on criteria
-- get_command_patterns: Identifies patterns in command usage
-- _gather_command_context: Collects additional context about commands
-- _categorize_command: Determines the type/category of a command
+- Command history management (REPL history)
+- Action history tracking
+- History search and analysis
 """
 
 import os
@@ -34,25 +30,30 @@ class HistoryManager:
     2. Storing and retrieving history
     3. Analyzing patterns in usage
     4. Providing context-aware search capabilities
+    5. Managing REPL command history
     """
     
     def __init__(self):
         """Initialize the history manager."""
-        # Get the termora directory (reusing the utility from the rollback manager)
+        # Get the termora directory
         self.termora_dir = get_termora_dir()
         
         # Define paths for history storage
         self.history_dir = self.termora_dir / "history"
         self.history_file = self.history_dir / "command_history.json"
+        self.repl_history_file = self.termora_dir / "repl_history.json"
         
         # Create directories if they don't exist
         self._ensure_directories()
         
         # Load existing history or initialize empty history
         self.history = self._load_history()
+        self.repl_history = self._load_repl_history()
     
     def _ensure_directories(self):
         """Ensure that required directories exist."""
+        if not self.termora_dir.exists():
+            self.termora_dir.mkdir(parents=True, exist_ok=True)
         if not self.history_dir.exists():
             self.history_dir.mkdir(parents=True, exist_ok=True)
     
@@ -77,6 +78,28 @@ class HistoryManager:
         """Save command history to file."""
         with open(self.history_file, "w") as f:
             json.dump(self.history, f, indent=2)
+    
+    def _load_repl_history(self) -> List[str]:
+        """Load REPL command history from file."""
+        if not self.repl_history_file.exists():
+            return []
+            
+        try:
+            with open(self.repl_history_file, 'r') as f:
+                return json.load(f)
+        except (json.JSONDecodeError, IOError):
+            return []
+    
+    def _save_repl_history(self) -> None:
+        """Save REPL command history to file."""
+        try:
+            # Keep only the latest 1000 commands
+            history_to_save = self.repl_history[-1000:] if len(self.repl_history) > 1000 else self.repl_history
+            
+            with open(self.repl_history_file, 'w') as f:
+                json.dump(history_to_save, f)
+        except IOError as e:
+            print(f"Warning: Could not save REPL history: {str(e)}")
     
     def add_command(self, command: str, directory: str, output: str = "", exit_code: int = 0, duration: float = 0.0) -> Dict[str, Any]:
         """
@@ -413,3 +436,30 @@ class HistoryManager:
         patterns.sort(key=lambda x: x["count"], reverse=True)
         
         return patterns[:10]  # Return top 10 patterns
+    
+    def add_repl_command(self, command: str) -> None:
+        """
+        Add a command to the REPL history.
+        
+        Args:
+            command: The command string to add
+        """
+        self.repl_history.append(command)
+        self._save_repl_history()
+    
+    def get_repl_history(self, limit: int = 1000) -> List[str]:
+        """
+        Get the REPL command history.
+        
+        Args:
+            limit: Maximum number of commands to return
+            
+        Returns:
+            List of recent commands
+        """
+        return self.repl_history[-limit:]
+    
+    def cleanup(self) -> None:
+        """Perform cleanup operations when shutting down."""
+        self._save_history()
+        self._save_repl_history()

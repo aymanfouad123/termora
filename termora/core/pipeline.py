@@ -10,7 +10,7 @@ Key functionality:
 - TermoraPipeline: Orchestrates the processing flow from input to execution
 - Intent extraction: Parse natural language into structured intents
 - Plan generation: Create executable commands from intents
-- Safety hand
+- Safety handling and execution coordination
 
 The pipeline follows a clear sequence:
 1. Input Parsing -> 2. Context Gathering -> 3. Intent Extraction -> 4. Plan Generation -> 5. Execution -> 6. History Logging
@@ -19,11 +19,14 @@ The pipeline follows a clear sequence:
 from typing import Dict, Any, List, Optional
 from dataclasses import dataclass
 from enum import Enum
-from pathlib import Path
 import os
 import json
 
-from termora.core.agent import ActionPlan
+from termora.core.agent import ActionPlan, TermoraAgent
+from termora.core.executor import CommandExecutor
+from termora.core.context import TerminalContext
+from termora.core.history import HistoryManager
+from termora.core.rollback import RollbackManager
 
 @dataclass
 class Intent:
@@ -63,7 +66,7 @@ class TermoraPlan:
             "requires_backup": self.requires_backup,
             "backup_paths": self.backup_paths or []
         }
-    
+
 class TermoraPipeline:
     """
     Pipeline orchestrator that manages the flow from input to execution.
@@ -78,6 +81,31 @@ class TermoraPipeline:
         self.history_manager = history_manager
         self.rollback_manager = rollback_manager
     
+    @classmethod
+    def from_config(cls, agent_config: Dict[str, Any]) -> 'TermoraPipeline':
+        """
+        Create a new pipeline instance from configuration.
+        
+        Args:
+            agent_config: Configuration for the AI agent
+            
+        Returns:
+            New TermoraPipeline instance
+        """
+        agent = TermoraAgent(config=agent_config)
+        executor = CommandExecutor()
+        context_provider = TerminalContext()
+        history_manager = HistoryManager()
+        rollback_manager = RollbackManager()
+        
+        return cls(
+            agent=agent,
+            executor=executor,
+            context_provider=context_provider,
+            history_manager=history_manager,
+            rollback_manager=rollback_manager
+        )
+    
     def process(self, user_input: str) -> Dict[str, Any]:
         """
         Process user input through the entire pipeline.
@@ -89,7 +117,11 @@ class TermoraPipeline:
             Execution results
         """
         try:
+            # Add to REPL history
+            self.history_manager.add_repl_command(user_input)
+            
             print("Pipeline: Starting to process input")
+            
             # 1. Parse input 
             parsed_input = self._parse_input(user_input)
             print(f"Pipeline: Parsed input: {parsed_input[:30]}...")
@@ -150,6 +182,10 @@ class TermoraPipeline:
                 "error_details": traceback.format_exc()
             }
     
+    def cleanup(self) -> None:
+        """Perform cleanup operations when shutting down."""
+        self.history_manager.cleanup()
+    
     def _parse_input(self, user_input: str) -> str:
         """
         Parse and preprocess user input.
@@ -174,7 +210,6 @@ class TermoraPipeline:
         Returns:
             Tuple of (Intent object, reasoning string)
         """
-        
         # Use the agent with an intent extraction prompt
         intent_extraction_prompt = self._create_intent_extraction_prompt(user_input, context_data)
 
@@ -236,7 +271,7 @@ class TermoraPipeline:
         {{
             "action": "move",
             "file_filter": {{ "name_pattern": "*screenshot*" }},
-            "time_filter": {{ "from": "2024-03-01", "to": "2024-04-01" }}, # If no year is mentioned for a time period then assume the user is assuming to use the current year
+            "time_filter": {{ "from": "2024-03-01", "to": "2024-04-01" }},
             "destination": "~/archive",
             "reasoning": "The user wants to move files..."
         }}
@@ -301,10 +336,9 @@ class TermoraPipeline:
         context_str = self.context_provider.to_string()
         intent_json = json.dumps(intent.to_dict(), indent=2)
         
-        # Detect OS for command compatibility
-        import platform
-        os_name = platform.system()
-        os_version = platform.release()
+        # Get OS info from context
+        os_name = context_data.get("os", "Unknown")
+        os_version = context_data.get("environment", {}).get("OS_VERSION", "Unknown")
         
         os_specific_guidance = ""
         if os_name == "Darwin":  # macOS
@@ -395,7 +429,7 @@ class TermoraPipeline:
         except Exception:
             return {"plan": [], "preview": {"natural_language": "Failed to generate plan"}}
         
-    def _convert_to_action_plan(self, plan: TermoraPlan) -> 'ActionPlan':
+    def _convert_to_action_plan(self, plan: TermoraPlan) -> ActionPlan:
         """
         Convert TermoraPlan to ActionPlan for execution.
         
@@ -405,7 +439,6 @@ class TermoraPipeline:
         Returns:
             ActionPlan object
         """
-    
         # Create explanation from preview
         explanation = plan.preview.get("natural_language", "")
         if "safety_notes" in plan.preview:
