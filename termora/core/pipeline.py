@@ -21,6 +21,12 @@ from dataclasses import dataclass
 from enum import Enum
 import os
 import json
+import traceback
+
+from rich.console import Console
+from rich.panel import Panel
+from rich.syntax import Syntax
+from rich.prompt import Confirm
 
 from termora.core.agent import ActionPlan, TermoraAgent
 from termora.core.executor import CommandExecutor
@@ -73,16 +79,17 @@ class TermoraPipeline:
     This acts as a facade coordinating the different components.
     """
     
-    def __init__(self, agent, executor, context_provider, history_manager, rollback_manager):
+    def __init__(self, agent, executor, context_provider, history_manager, rollback_manager, debug: bool = False):
         """Initialize the pipeline with required components."""
         self.agent = agent
         self.executor = executor
         self.context_provider = context_provider
         self.history_manager = history_manager
+        self.debug = debug
         self.rollback_manager = rollback_manager
     
     @classmethod
-    def from_config(cls, agent_config: Dict[str, Any]) -> 'TermoraPipeline':
+    def from_config(cls, agent_config: Dict[str, Any], debug: bool = False) -> 'TermoraPipeline':
         """
         Create a new pipeline instance from configuration.
         
@@ -103,8 +110,29 @@ class TermoraPipeline:
             executor=executor,
             context_provider=context_provider,
             history_manager=history_manager,
-            rollback_manager=rollback_manager
+            rollback_manager=rollback_manager,
+            debug=debug
         )
+        
+    def _debug_step(self, step_name: str, data: Any = None, pause: bool = True) -> None:
+        """Print debug information for a pipeline step."""
+        if not self.debug:
+            return
+        
+        self.console.print(f"\n[bold cyan]=== Pipeline Step: {step_name} ===[/bold cyan]")
+        
+        if data is not None:
+            if isinstance(data, (dict, list)):
+                # Pretty print JSON data
+                self.console.print(Syntax(json.dumps(data, indent=2), "json", theme="monokai"))
+            else:
+                # Print other data types
+                self.console.print(Panel(str(data), title="Data"))
+        
+        if pause:
+            self.console.print("\n[bold yellow]Press Enter to continue to next step...[/bold yellow]")
+            input()
+        
     
     def process(self, user_input: str) -> Dict[str, Any]:
         """
@@ -117,65 +145,85 @@ class TermoraPipeline:
             Execution results
         """
         try:
+            self._debug_step("Input", {"user_input": user_input})
+            
             # Add to REPL history
             self.history_manager.add_repl_command(user_input)
             
-            print("Pipeline: Starting to process input")
-            
             # 1. Parse input 
             parsed_input = self._parse_input(user_input)
-            print(f"Pipeline: Parsed input: {parsed_input[:30]}...")
+            self._debug_step("Parsed Input", {"parsed_input": parsed_input})
             
             # 2. Gather context
             print("Pipeline: Gathering context")
             context_data = self.context_provider.get_context()
             context_data["command_history"] = self.history_manager.search_history(limit=10)
-            print("Pipeline: Context gathered successfully")
+            self._debug_step("Context", context_data)
             
             # 3. Extract intent via AI model
             print("Pipeline: Extracting intent")
             try:
                 intent, reasoning = self._extract_intent(parsed_input, context_data)
-                print(f"Pipeline: Intent extracted: {intent.action}")
+                self._debug_step("Intent Extraction", {
+                    "intent": intent.to_dict(),
+                    "reasoning": reasoning
+                })
             except Exception as e:
-                print(f"Pipeline: Intent extraction error: {str(e)}")
+                self._debug_step("Intent Extraction Error", str(e))
                 raise Exception(f"Failed to extract intent: {str(e)}") from e
             
             # 4. Generate plan
-            print("Pipeline: Generating plan")
             try:
                 plan = self._generate_plan(intent, reasoning, parsed_input, context_data)
-                print(f"Pipeline: Plan generated with {len(plan.plan)} actions")
+                self._debug_step("Plan Generation", {
+                    "plan": plan.to_dict(),
+                    "action_count": len(plan.plan)
+                })
             except Exception as e:
-                print(f"Pipeline: Plan generation error: {str(e)}")
+                self._debug_step("Plan Generation Error", str(e))
                 raise Exception(f"Failed to generate plan: {str(e)}") from e
             
             # 5. Convert to generated plan to ActionPlan for execution
-            print("Pipeline: Converting to ActionPlan")
             try:
                 action_plan = self._convert_to_action_plan(plan)
-                print("Pipeline: Converted to ActionPlan successfully")
+                self._debug_step("Action Plan", {
+                    "explanation": action_plan.explanation,
+                    "actions": action_plan.actions,
+                    "requires_backup": action_plan.requires_backup,
+                    "backup_paths": action_plan.backup_paths
+                })
             except Exception as e:
-                print(f"Pipeline: ActionPlan conversion error: {str(e)}")
+                self._debug_step("Action Plan Conversion Error", str(e))
                 raise Exception(f"Failed to convert plan: {str(e)}") from e
             
+             # If in debug mode 
+            if self.debug:
+                if not Confirm.ask("Execute this plan?"):
+                    return {
+                        "executed": False,
+                        "reason": "Execution cancelled by user"
+                    }
+            
             # 6. Execute (with safety preview and confirmation)
-            print("Pipeline: Executing plan")
             result = self.executor.execute_plan(action_plan)
-            print(f"Pipeline: Execution complete, success: {result.get('executed', False)}")
+            self._debug_step("Execution Result", result)
             
             # 7. Log history and return result
             if result.get("executed", False):
-                print("Pipeline: Saving execution history")
                 self.rollback_manager.save_execution_history(result)
                 self.history_manager.add_action_plan(action_plan, result, os.getcwd())
+                self._debug_step("History Updated", {
+                    "action_plan": action_plan.explanation,
+                    "success": True
+                })
             
             return result
         except Exception as e:
-            print(f"Pipeline: Critical error in pipeline: {str(e)}")
-            import traceback
-            print(traceback.format_exc())
-            # Return a minimal result that won't cause further errors
+            error_details = {
+                "error": str(e),
+                "traceback": traceback.format_exc()
+            }
+            self._debug_step("Critical Error", error_details)
             return {
                 "executed": False,
                 "reason": f"Pipeline error: {str(e)}",
