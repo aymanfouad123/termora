@@ -29,13 +29,14 @@ termora_theme = Theme({
 class TermoraCLI:
     """Main CLI interface for Termora."""
     
-    def __init__(self, model: str = "groq", verbose: bool = False):
+    def __init__(self, model: str = "groq", verbose: bool = False, debug: bool = False):
         """
         Initialize the Termora CLI.
         
         Args:
             model: AI model to use ("openai", "groq", or "ollama")
             verbose: Whether to show verbose output
+            debug: Whether to enable pipeline debug mode
         """
         self.verbose = verbose
         self.console = Console(theme=termora_theme)
@@ -47,8 +48,7 @@ class TermoraCLI:
             "temperature": 0.7,
             "max_tokens": 2000
         }
-        self.pipeline = TermoraPipeline.from_config(agent_config)
-        self._display_welcome()
+        self.pipeline = TermoraPipeline.from_config(agent_config, debug=debug)
 
     def _display_welcome(self) -> None:
         """Display the welcome message."""
@@ -143,13 +143,18 @@ def parse_args(args: List[str]) -> Dict[str, Any]:
         action="store_true",
         help="Show verbose output"
     )
+    parser.add_argument(
+        "--debug",
+        action="store_true",
+        help="Enable debug mode to inspect pipeline steps"
+    )
     
     return vars(parser.parse_args(args))
 
 def main() -> None:
     """Main entry point for the CLI."""
     args = parse_args(sys.argv[1:])
-    cli = TermoraCLI(model=args["model"], verbose=args["verbose"])
+    cli = TermoraCLI(model=args["model"], verbose=args["verbose"], debug=args["debug"])
     cli.start_repl()
 
 if __name__ == "__main__":
