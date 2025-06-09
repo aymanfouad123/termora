@@ -5,6 +5,8 @@
 
 **Your agentic AI terminal with perfect memory, intelligent automation, and reliable rollbacks.**
 
+(Currently in progress 🛠️)
+
 Termora is an intelligent AI-powered terminal assistant that remembers how you work, dynamically reasons through tasks, and executes operations with safety and transparency—all through natural language conversation.
 
 ## Key Capabilities
